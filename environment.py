@@ -42,7 +42,6 @@ def _get_next_state(state, observation):
     return next_state
 
 
-
 class AtariWrapper:
     """Wraps over an Atari environment from OpenAI Gym and provides experience replay."""
 
@@ -55,8 +54,8 @@ class AtariWrapper:
 
         Args:
             env: An OpenAI Gym Atari environment.
-            replay_memory_capacity: Number of experiences remembered. An experience is a (state,
-                action, reward, next_state) tuple. During training, learners sample the replay
+            replay_memory_capacity: Number of experiences remembered. An experience is a [state,
+                action, reward, next_state] array. During training, learners sample the replay
                 memory.
             observations_per_state: Number of consecutive observations within a state. Provides some
                 short-term memory for the learner. Useful in games like Pong where the trajectory of
@@ -67,7 +66,7 @@ class AtariWrapper:
         self.env = env
         self.replay_memory_capacity = replay_memory_capacity
         self.observations_per_state = observations_per_state
-        self.action_space = set(action_space) if action_space else set(range(self.env.action_space.n))
+        self.action_space = action_space if action_space else list(range(self.env.action_space.n))
         self.state_space = [84, 84, observations_per_state]
         self._initialize_replay_memory()
         self.restart()
@@ -80,6 +79,9 @@ class AtariWrapper:
         
     def step(self, action):
         """Performs the specified action.
+
+        Returns:
+            The reward.
         
         Raises:
             Exception: If the game ended.
@@ -93,15 +95,17 @@ class AtariWrapper:
             raise ValueError('Action "{}" is invalid. Valid actions: {}.'.format(action,
                                                                                  self.action_space))
         
-        state = self._get_state()
+        state = self.get_state()
         observation, reward, self.done, _ = self.env.step(action)
         next_state = _get_next_state(state, _preprocess_observation(observation))
-        experience = state, action, reward, next_state
+        experience = np.array([state, action, reward, next_state])
 
         if len(self.replay_memory) >= self.replay_memory_capacity:
             self.replay_memory.popleft()
         
         self.replay_memory.append(experience)
+
+        return reward
 
     def render(self):
         """Draws the environment."""
@@ -111,14 +115,17 @@ class AtariWrapper:
     def sample_action(self):
         """Samples a random action."""
 
-        return np.random.choice(list(self.action_space))
+        return np.random.choice(self.action_space)
 
-    def sample_experience(self, exp_count):
+    def sample_experiences(self, exp_count):
         """Randomly samples experiences from the replay memory. May contain duplicates."""
 
-        return np.random.choice(self.replay_memory, exp_count)
+        indexes = np.random.choice(len(self.replay_memory), exp_count)
+        experiences = np.array([self.replay_memory[i] for i in indexes])
 
-    def _get_state(self):
+        return experiences
+
+    def get_state(self):
         """Gets the current state.
 
         Returns:
@@ -148,5 +155,5 @@ class AtariWrapper:
         next_state = _get_next_state(state, _preprocess_observation(observation))
 
         # Store the first experience into the replay memory.
-        experience = state, action, reward, next_state
+        experience = np.array([state, action, reward, next_state])
         self.replay_memory.append(experience)
