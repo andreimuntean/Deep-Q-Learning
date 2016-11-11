@@ -1,22 +1,29 @@
+#import dqn
+#import tensorflow as tf
 import environment
 import gym
 
-env = environment.AtariWrapper(gym.make('Pong-v0'), replay_memory_capacity=10)
+env = environment.AtariWrapper(gym.make('Pong-v0'),
+                               action_space=[0, 2, 3], # 'NOOP', 'RIGHT' and 'LEFT'.
+                               observations_per_state=2,
+                               replay_memory_capacity=15000)
 
-print(env.action_space)
-print(env.replay_memory_capacity)
-print(env.replay_memory)
+print('Possible actions:', env.action_space)
+print('Replay memory capacity:', env.replay_memory_capacity)
 print()
 
-env.start()
+for i in range(20000):
+    if env.done:
+        print('Restarting...')
+        env.restart()
 
-print(len(env.replay_memory))
-print(env.replay_memory[0][0].shape)
-print(env.replay_memory[0][1])
-print(env.replay_memory[0][2])
-print(env.replay_memory[0][3].shape)
-print()
+    action = env.sample_action()
+    env.step(action)
+    print(action, len(env.replay_memory), env.observation_space)
+    env.render()
 
-for i in range(15):
-    env.step(env.sample_action())
-    print(len(env.replay_memory))
+input()
+
+#sess = tf.InteractiveSession()
+#dqn.DeepQNetwork(sess, len(env.action_space), env.observation_space)
+#sess.close()

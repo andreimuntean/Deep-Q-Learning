@@ -12,7 +12,7 @@ import numpy as np
 
 
 def _preprocess_observation(observation):
-    """Deletes color information, shrinks and crops the observation into an 84x84 image."""
+    """Deletes colors, shrinks and crops the 210x160x3 observation into an 84x84 grayscale image."""
 
     smaller_image = transform.resize(color.rgb2gray(observation), (110, 84))
     square_image = smaller_image[13:110 - 13, :]
@@ -28,73 +28,73 @@ def _get_next_state(state, observation):
     ball can't be inferred from a single image.
 
     Returns:
-        A len(state)x84x84 tensor."""
+        A 84x84xlen(state) tensor.
+    """
 
     next_state = np.empty(state.shape, dtype=state.dtype)
     
     # Get the past (self.observations_per_state - 1) observations.
-    next_state[:-1] = state[1:]
+    next_state[:, :, :-1] = state[:, :, 1:]
 
     # Append the newest observation.
-    next_state[-1] = observation
+    next_state[:, :, -1] = observation
 
     return next_state
 
 
+
 class AtariWrapper:
-    """Wraps over an OpenAI Gym Atari environment and provides experience replay."""
+    """Wraps over an Atari environment from OpenAI Gym and provides experience replay."""
 
     def __init__(self,
                  env,
                  replay_memory_capacity=100000,
-                 observations_per_state=4,
+                 observations_per_state=3,
                  action_space=None):
         """Creates the wrapper.
 
         Args:
-            env: OpenAI Gym environment.
+            env: An OpenAI Gym Atari environment.
             replay_memory_capacity: Number of experiences remembered. An experience is a (state,
                 action, reward, next_state) tuple. During training, learners sample the replay
                 memory.
             observations_per_state: Number of consecutive observations within a state. Provides some
                 short-term memory for the learner. Useful in games like Pong where the trajectory of
                 the ball can't be inferred from a single image.
-            action_space: Determines which actions are allowed. If none, all actions are allowed.
+            action_space: Determines which actions are allowed. If 'None', all actions are allowed.
         """
 
         self.env = env
         self.replay_memory_capacity = replay_memory_capacity
         self.observations_per_state = observations_per_state
-        self.action_space = action_space if action_space else list(range(self.env.action_space.n))
-        self.replay_memory = deque()
+        self.action_space = set(action_space) if action_space else set(range(self.env.action_space.n))
+        self.observation_space = [84, 84, observations_per_state]
+        self._initialize_replay_memory()
+        self.restart()
 
-    def start(self):
-        """Starts (or restarts) the game."""
+    def restart(self):
+        """Restarts the game."""
 
-        self.replay_memory.clear()
         self.env.reset()
-
-        # Construct the first state by performing random actions.
-        state = np.empty([self.observations_per_state, 84, 84])
-
-        for i in range(len(state)):
-            observation, _, _, _ = self.env.step(self.sample_action())
-            state[i] = _preprocess_observation(observation)
-
-        # Construct the next state by performing another random action.
-        action = self.sample_action()
-        observation, reward, _, _ = self.env.step(action)
-        next_state = _get_next_state(state, _preprocess_observation(observation))
-
-        # Store the first experience into the replay memory.
-        experience = state, action, reward, next_state
-        self.replay_memory.append(experience)
-
+        self.done = False
+        
     def step(self, action):
-        """Performs the specified action."""
+        """Performs the specified action.
+        
+        Raises:
+            Exception: If the game ended.
+            ValueError: If the action is not valid.
+        """
+
+        if self.done:
+            raise Exception('Game finished.')
+
+        if action not in self.action_space:
+            raise ValueError('Action "{}" is invalid. Valid actions: {}.'.format(action,
+                                                                                 self.action_space))
         
         state = self._get_state()
-        observation, reward, done, _ = self.env.step(action)
+        observation, reward, self.done, _ = self.env.step(action)
         next_state = _get_next_state(state, _preprocess_observation(observation))
         experience = state, action, reward, next_state
 
@@ -103,10 +103,15 @@ class AtariWrapper:
         
         self.replay_memory.append(experience)
 
+    def render(self):
+        """Draws the environment."""
+
+        self.env.render()
+
     def sample_action(self):
         """Samples a random action."""
 
-        return np.random.choice(self.action_space)
+        return np.random.choice(list(self.action_space))
 
     def sample_experience(self, exp_count):
         """Randomly samples experiences from the replay memory. May contain duplicates."""
@@ -117,6 +122,31 @@ class AtariWrapper:
         """Gets the current state.
 
         Returns:
-            A (self.observations_per_state)x84x84 tensor."""
+            A 84x84x(self.observations_per_state) tensor.
+        """
 
-        return self.replay_memory[-1][0]
+        newest_experience = self.replay_memory[-1]
+        current_state = newest_experience[3]
+
+        return current_state
+
+    def _initialize_replay_memory(self):
+        """Clears the experience buffer then creates the initial experience by acting randomly."""
+
+        self.replay_memory = deque()
+
+        # Construct the first state by performing random actions.
+        state = np.empty([84, 84, self.observations_per_state])
+
+        for i in range(state.shape[2]):
+            observation, _, _, _ = self.env.step(self.sample_action())
+            state[:, :, i] = _preprocess_observation(observation)
+
+        # Construct the next state by performing one more random action.
+        action = self.sample_action()
+        observation, reward, _, _ = self.env.step(action)
+        next_state = _get_next_state(state, _preprocess_observation(observation))
+
+        # Store the first experience into the replay memory.
+        experience = state, action, reward, next_state
+        self.replay_memory.append(experience)
