@@ -68,7 +68,7 @@ class AtariWrapper:
         self.replay_memory_capacity = replay_memory_capacity
         self.observations_per_state = observations_per_state
         self.action_space = set(action_space) if action_space else set(range(self.env.action_space.n))
-        self.observation_space = [84, 84, observations_per_state]
+        self.state_space = [84, 84, observations_per_state]
         self._initialize_replay_memory()
         self.restart()
 

@@ -10,20 +10,20 @@ env = environment.AtariWrapper(gym.make('Pong-v0'),
 
 print('Possible actions:', env.action_space)
 print('Replay memory capacity:', env.replay_memory_capacity)
+print('State space:', env.state_space)
 print()
 
 for i in range(20000):
     if env.done:
-        print('Restarting...')
         env.restart()
+        print('Game restarted.')
 
     action = env.sample_action()
     env.step(action)
-    print(action, len(env.replay_memory), env.observation_space)
     env.render()
 
 input()
 
 #sess = tf.InteractiveSession()
-#dqn.DeepQNetwork(sess, len(env.action_space), env.observation_space)
+#dqn.DeepQNetwork(sess, len(env.action_space), env.state_space)
 #sess.close()
