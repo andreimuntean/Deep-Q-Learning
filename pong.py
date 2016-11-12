@@ -77,7 +77,7 @@ with tf.Session() as sess:
             else:
                 state = np.empty([1, *env.state_space])
                 state[0] = env.get_state()
-                strongest_signal = np.argmax(network.evaluate_Q(state))
+                strongest_signal = np.argmax(network.eval_Q(state))
                 action = env.action_space[strongest_signal]
 
             total_reward += env.step(action)
