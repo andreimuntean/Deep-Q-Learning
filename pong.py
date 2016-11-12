@@ -1,3 +1,4 @@
+import datetime
 import dqn
 import environment
 import gym
@@ -17,14 +18,15 @@ print('Replay memory capacity:', env.replay_memory_capacity)
 print('State space:', env.state_space)
 print()
 
-num_episodes = 20
+num_episodes = 10000
 batch_size = 32
 wait_before_training = 5000
 train_frequency = 4
 discount = 0.99
 
-load_path = None
-save_path = '/tmp/model.ckpt'
+load_path = None # './checkpoints/model.ckpt'
+save_path = './checkpoints/model.ckpt'
+save_frequency = 20000
 
 epsilon_history = []
 loss_history = []
@@ -37,6 +39,7 @@ with tf.Session() as sess:
     
     if load_path:
         saver.restore(sess, load_path)
+        print('Model restored.')
 
     t = 0
     for i in range(1, num_episodes + 1):
@@ -47,8 +50,8 @@ with tf.Session() as sess:
         while not env.done:
             t += 1
             env.render()
-            
-            # Occassionally train.
+
+            # Occasionally train.
             if t > wait_before_training and t % train_frequency == 0:
                 # These operations might be confusing if you forget that they're vectorized.
                 experiences = env.sample_experiences(batch_size)
@@ -58,14 +61,14 @@ with tf.Session() as sess:
                 next_states = np.stack(experiences[:, 3], axis=0)
 
                 # Estimate the Q values.
-                Q = network.evaluate_Q(states)
+                Q = network.eval_Q(states)
 
-                # Get the true Q values for the specified actions.
+                # Determine the true Q values for the specified actions.
                 Q_ = np.copy(Q)
                 observed_i = np.arange(batch_size), actions_i
-                Q_[observed_i] = rewards + discount * np.max(network.evaluate_Q(next_states), 1)
+                Q_[observed_i] = rewards + discount * np.max(network.eval_Q(next_states), axis=1)
 
-                episode_loss.append(network.evaluate_loss(Q, Q_))
+                episode_loss.append(network.eval_loss(Q, Q_))
                 network.train(states, Q_)
 
             # Occasionally try a random action (explore).
@@ -79,6 +82,10 @@ with tf.Session() as sess:
 
             total_reward += env.step(action)
 
+            if save_path and t % save_frequency == 0:
+                saver.save(sess, save_path)
+                print('[{}] Saved model at "{}".'.format(datetime.datetime.now(), save_path))
+
         epsilon_history.append(epsilon)
         loss_history.append(np.mean(episode_loss))
         reward_history.append(total_reward)
@@ -87,12 +94,13 @@ with tf.Session() as sess:
                                                                       total_reward,
                                                                       epsilon))
 
-        if save_path and i % 10 == 0:
-            saver.save(sess, save_path)
-            print('Saved model.')
-
         env.restart()
 
+if save_path:
+    saver.save(sess, save_path)
+    print('[{}] Saved model at "{}".'.format(datetime.datetime.now(), save_path))
+
+print('Total timesteps:', t)
 
 plt.subplot(311)
 plt.ylabel('Loss')

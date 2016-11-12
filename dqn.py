@@ -28,7 +28,7 @@ def _create_max_pool_2x2(x):
 
 
 class DeepQNetwork():
-    def __init__(self, sess, num_actions, state_shape, learning_rate=0.001, dropout_prob=0.2):
+    def __init__(self, sess, num_actions, state_shape):
         """Creates a deep Q network.
 
         Args:
@@ -36,9 +36,6 @@ class DeepQNetwork():
             num_actions: Number of possible actions.
             state_shape: A vector with three values, representing the width, height and depth of
                 input states. For example, the shape of 100x80 RGB images is [100, 80, 3].
-            learning_rate: The speed with which the network learns from new examples.
-            dropout_prob: Likelihood of individual neurons from fully connected layers becoming
-                inactive.
         """
 
         self.sess = sess
@@ -74,7 +71,8 @@ class DeepQNetwork():
             h_fc = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc) + b_fc)
 
         # Implement dropout.
-        h_fc_drop = tf.nn.dropout(h_fc, dropout_prob)
+        self.keep_prob = tf.placeholder(tf.float32, name='Keep_Prob')
+        h_fc_drop = tf.nn.dropout(h_fc, self.keep_prob)
 
         with tf.name_scope('Output'):
             W_output = _create_weights([256, num_actions])
@@ -82,14 +80,35 @@ class DeepQNetwork():
             self.Q = tf.matmul(h_fc_drop, W_output) + b_output
 
         self.Q_ = tf.placeholder(tf.float32, [None, num_actions], name='Observed_Q')
-        self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.Q, self.Q_))
-        self.train_step = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss)
+        self.loss = tf.reduce_mean(tf.square(self.Q - self.Q_))
+        self.learning_rate = tf.placeholder(tf.float32, name='Learning_Rate')
+        self.train_step = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
-    def evaluate_Q(self, x):
-        return self.sess.run(self.Q, feed_dict={self.x: x})
+    def eval_Q(self, states):
+        """For every specified state, evaluates the utility of each possible action.
 
-    def evaluate_loss(self, Q, Q_):
+        Args:
+            states: One or more states.
+        """
+        
+        return self.sess.run(self.Q, feed_dict={self.x: states, self.keep_prob: 1})
+
+    def eval_loss(self, Q, Q_):
+        """Compares a predicted Q value with an observed Q value."""
+        
         return self.sess.run(self.loss, feed_dict={self.Q: Q, self.Q_: Q_})
 
-    def train(self, states, Q_):
-        self.sess.run(self.train_step, feed_dict={self.x: states, self.Q_: Q_})
+    def train(self, states, Q_, learning_rate=0.001, dropout_prob=0.2):
+        """Learns by performing one step of gradient descent.
+
+        Args:
+            states: One or more states that act as examples for the network.
+            learning_rate: The speed with which the network learns from new examples.
+            dropout_prob: Likelihood of individual neurons from fully connected layers becoming
+                inactive.
+        """
+        
+        self.sess.run(self.train_step, feed_dict={self.x: states,
+                                                  self.Q_: Q_,
+                                                  self.learning_rate: learning_rate,
+                                                  self.keep_prob: 1 - dropout_prob})
