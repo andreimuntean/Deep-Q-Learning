@@ -15,7 +15,7 @@ def _preprocess_observation(observation):
     """Deletes colors, shrinks and crops the 210x160x3 observation into an 84x84 grayscale image."""
 
     smaller_image = transform.resize(color.rgb2gray(observation), (110, 84))
-    square_image = smaller_image[13:110 - 13, :]
+    square_image = smaller_image[17:110 - 9, :]
 
     return square_image
 
@@ -55,7 +55,7 @@ class AtariWrapper:
         Args:
             env: An OpenAI Gym Atari environment.
             replay_memory_capacity: Number of experiences remembered. An experience is a [state,
-                action, reward, next_state] array. During training, learners sample the replay
+                action, reward, next_state, done] array. During training, learners sample the replay
                 memory.
             observations_per_state: Number of consecutive observations within a state. Provides some
                 short-term memory for the learner. Useful in games like Pong where the trajectory of
@@ -98,7 +98,7 @@ class AtariWrapper:
         state = self.get_state()
         observation, reward, self.done, _ = self.env.step(action)
         next_state = _get_next_state(state, _preprocess_observation(observation))
-        experience = np.array([state, action, reward, next_state])
+        experience = np.array([state, action, reward, next_state, self.done])
 
         if len(self.replay_memory) >= self.replay_memory_capacity:
             self.replay_memory.popleft()
@@ -151,9 +151,9 @@ class AtariWrapper:
 
         # Construct the next state by performing one more random action.
         action = self.sample_action()
-        observation, reward, _, _ = self.env.step(action)
+        observation, reward, self.done, _ = self.env.step(action)
         next_state = _get_next_state(state, _preprocess_observation(observation))
 
         # Store the first experience into the replay memory.
-        experience = np.array([state, action, reward, next_state])
+        experience = np.array([state, action, reward, next_state, self.done])
         self.replay_memory.append(experience)

@@ -1,32 +1,47 @@
+import argparse
 import datetime
 import dqn
 import environment
 import gym
 import numpy as np
-import sys
 import tensorflow as tf
 
 from matplotlib import pyplot as plt
+
+parser = argparse.ArgumentParser(description='Train an agent to play Pong.')
+
+parser.add_argument('--load_path', help='loads a trained model from the specified path')
+
+parser.add_argument('--save_path',
+                    help='saves the model at the specified path',
+                    default='checkpoints/tmp/model.ckpt')
+
+parser.add_argument('--save_frequency',
+                    help='time step interval at which to save the model',
+                    type=int,
+                    default=10000)
+
+parser.add_argument('--num_episodes',
+                    help='number of episodes that will be played',
+                    type=int,
+                    default=10000)
+
+args = parser.parse_args()
+
+load_path = args.load_path
+save_path = args.save_path
+save_frequency = args.save_frequency
+num_episodes = args.num_episodes
+
+batch_size = 32
+wait_before_training = 5000
+train_frequency = 3
+discount = 0.99
 
 env = environment.AtariWrapper(gym.make('Pong-v0'),
                                action_space=[0, 2, 3], # 'NOOP', 'RIGHT' and 'LEFT'.
                                observations_per_state=2,
                                replay_memory_capacity=15000)
-
-print('Possible actions:', env.action_space)
-print('Replay memory capacity:', env.replay_memory_capacity)
-print('State space:', env.state_space)
-print()
-
-num_episodes = 10000
-batch_size = 32
-wait_before_training = 5000
-train_frequency = 4
-discount = 0.99
-
-load_path = None # './checkpoints/model.ckpt'
-save_path = './checkpoints/model.ckpt'
-save_frequency = 20000
 
 epsilon_history = []
 loss_history = []
@@ -36,7 +51,7 @@ with tf.Session() as sess:
     network = dqn.DeepQNetwork(sess, len(env.action_space), env.state_space)
     sess.run(tf.initialize_all_variables())
     saver = tf.train.Saver()
-    
+
     if load_path:
         saver.restore(sess, load_path)
         print('Model restored.')
@@ -59,26 +74,29 @@ with tf.Session() as sess:
                 actions_i = np.stack([env.action_space.index(a) for a in experiences[:, 1]], axis=0)
                 rewards = np.stack(experiences[:, 2], axis=0)
                 next_states = np.stack(experiences[:, 3], axis=0)
+                done = np.stack(experiences[:, 4], axis=0)
 
-                # Estimate the Q values.
-                Q = network.eval_Q(states)
+                # Estimate action values.
+                Q = network.eval_Q(states, actions_i)
 
                 # Determine the true Q values for the specified actions.
-                Q_ = np.copy(Q)
-                observed_i = np.arange(batch_size), actions_i
-                Q_[observed_i] = rewards + discount * np.max(network.eval_Q(next_states), axis=1)
-
-                episode_loss.append(network.eval_loss(Q, Q_))
-                network.train(states, Q_)
+                #
+                #                    { r, if next state is terminal
+                # Q(state, action) = {
+                #                    { r + discount * max(Q(next state, <any action>)), otherwise
+                Q_ = rewards + ~done * discount * network.eval_optimal_action_value(next_states)
+                
+                # Estimate error and update weights.
+                loss = network.eval_loss(Q, Q_)
+                episode_loss.append(loss)
+                network.train(states, actions_i, Q_)
 
             # Occasionally try a random action (explore).
             if np.random.rand() < epsilon:
                 action = env.sample_action()
             else:
-                state = np.empty([1, *env.state_space])
-                state[0] = env.get_state()
-                strongest_signal = np.argmax(network.eval_Q(state))
-                action = env.action_space[strongest_signal]
+                state = np.expand_dims(env.get_state(), axis=0)
+                action = env.action_space[network.eval_optimal_action(state)[0]]
 
             total_reward += env.step(action)
 
@@ -87,7 +105,7 @@ with tf.Session() as sess:
                 print('[{}] Saved model at "{}".'.format(datetime.datetime.now(), save_path))
 
         epsilon_history.append(epsilon)
-        loss_history.append(np.mean(episode_loss))
+        loss_history.append(np.mean(episode_loss) if episode_loss else -1)
         reward_history.append(total_reward)
         print('Episode: {}  Loss: {}  Reward: {}  Epsilon: {}'.format(i,
                                                                       loss_history[-1],

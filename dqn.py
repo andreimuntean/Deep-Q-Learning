@@ -77,38 +77,73 @@ class DeepQNetwork():
         with tf.name_scope('Output'):
             W_output = _create_weights([256, num_actions])
             b_output = _create_bias([num_actions])
-            self.Q = tf.matmul(h_fc_drop, W_output) + b_output
+            h_output = tf.matmul(h_fc_drop, W_output) + b_output
 
-        self.Q_ = tf.placeholder(tf.float32, [None, num_actions], name='Observed_Q')
+        # Estimate the optimal action and its expected value.
+        self.optimal_action = tf.argmax(h_output, 1, name='Optimal_Action')
+        self.optimal_action_value = tf.reduce_max(h_output, 1, name='Optimal_Action_Value')
+
+        # Estimate the value of the specified action.
+        self.action = tf.placeholder(tf.int32, name='Action')
+        one_hot_action = tf.one_hot(self.action, num_actions)
+        self.Q = tf.reduce_sum(h_output * one_hot_action, 1, name='Estimated_Action_Value')
+
+        # Compare with the observed action value.
+        self.Q_ = tf.placeholder(tf.float32, [None], name='Observed_Action_Value')
         self.loss = tf.reduce_mean(tf.square(self.Q - self.Q_))
         self.learning_rate = tf.placeholder(tf.float32, name='Learning_Rate')
-        self.train_step = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
+        self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
 
-    def eval_Q(self, states):
-        """For every specified state, evaluates the utility of each possible action.
+    def eval_optimal_action(self, state):
+        """Estimates the optimal action for the specified state.
 
         Args:
-            states: One or more states.
+            state: A state. Can be batched into multiple states.
+        """
+
+        return self.sess.run(self.optimal_action, feed_dict={self.x: state, self.keep_prob: 1})
+
+    def eval_optimal_action_value(self, state):
+        """Estimates the optimal action value for the specified state.
+
+        Args:
+            state: A state. Can be batched into multiple states.
+        """
+
+        return self.sess.run(self.optimal_action_value, feed_dict={self.x: state,
+                                                                   self.keep_prob: 1})
+
+    def eval_Q(self, state, action):
+        """Evaluates the utility of the specified action for the specified state.
+
+        Args:
+            state: A state. Can be batched into multiple states.
+            action: An action. Can be batched into multiple actions.
         """
         
-        return self.sess.run(self.Q, feed_dict={self.x: states, self.keep_prob: 1})
+        return self.sess.run(self.Q, feed_dict={self.x: state,
+                                                self.action: action,
+                                                self.keep_prob: 1})
 
     def eval_loss(self, Q, Q_):
         """Compares a predicted Q value with an observed Q value."""
         
         return self.sess.run(self.loss, feed_dict={self.Q: Q, self.Q_: Q_})
 
-    def train(self, states, Q_, learning_rate=0.001, dropout_prob=0.2):
+    def train(self, state, action, Q_, learning_rate=0.001, dropout_prob=0.2):
         """Learns by performing one step of gradient descent.
 
         Args:
-            states: One or more states that act as examples for the network.
+            state: A state. Can be batched into multiple states.
+            action: An action. Can be batched into multiple actions.
+            Q_: An observed action value.
             learning_rate: The speed with which the network learns from new examples.
             dropout_prob: Likelihood of individual neurons from fully connected layers becoming
                 inactive.
         """
         
-        self.sess.run(self.train_step, feed_dict={self.x: states,
+        self.sess.run(self.train_step, feed_dict={self.x: state,
+                                                  self.action: action,
                                                   self.Q_: Q_,
                                                   self.learning_rate: learning_rate,
                                                   self.keep_prob: 1 - dropout_prob})
