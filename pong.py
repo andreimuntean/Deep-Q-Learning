@@ -39,9 +39,9 @@ train_frequency = 3
 discount = 0.99
 
 env = environment.AtariWrapper(gym.make('Pong-v0'),
-                               action_space=[0, 2, 3], # 'NOOP', 'RIGHT' and 'LEFT'.
-                               observations_per_state=2,
-                               replay_memory_capacity=15000)
+                               action_space=[0, 2, 3], # 'NONE', 'UP' and 'DOWN'.
+                               observations_per_state=4,
+                               replay_memory_capacity=20000)
 
 epsilon_history = []
 loss_history = []
@@ -58,7 +58,8 @@ with tf.Session() as sess:
 
     t = 0
     for i in range(1, num_episodes + 1):
-        epsilon = min(10 / i, 1)
+        # Epsilon anneals from 1 to 0.05.
+        epsilon = max(min(10 / i, 1), 0.05)
         episode_loss = []
         total_reward = 0
 

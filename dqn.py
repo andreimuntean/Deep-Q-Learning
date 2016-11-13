@@ -130,7 +130,7 @@ class DeepQNetwork():
         
         return self.sess.run(self.loss, feed_dict={self.Q: Q, self.Q_: Q_})
 
-    def train(self, state, action, Q_, learning_rate=0.001, dropout_prob=0.2):
+    def train(self, state, action, Q_, learning_rate=1e-6, dropout_prob=0.2):
         """Learns by performing one step of gradient descent.
 
         Args:
