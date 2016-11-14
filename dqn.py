@@ -4,27 +4,24 @@ Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforc
 (Mnih et al., 2013).
 """
 
+import math
 import tensorflow as tf
 
 
 def _create_weights(shape):
-    # Initialize with slight noise to avoid symmetry.
-    value = tf.truncated_normal(shape, stddev=0.1, name='weights')
+    # Initialize ReLU neurons with slight noise to avoid symmetry.
+    value = tf.truncated_normal(shape, stddev=0.1, name='Weights')
     return tf.Variable(value)
 
 
 def _create_bias(shape):
     # Initialize with a slight positive bias to prevent ReLU neurons from dying.
-    value = tf.constant(0.1, shape=shape, name='bias')
+    value = tf.constant(0.1, shape=shape, name='Bias')
     return tf.Variable(value)
 
 
-def _create_conv2d(x, W):
-    return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
-
-
-def _create_max_pool_2x2(x):
-    return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+def _create_conv2d(x, W, stride):
+    return tf.nn.conv2d(x, W, strides=[1, stride, stride, 1], padding='SAME')
 
 
 class DeepQNetwork():
@@ -45,28 +42,23 @@ class DeepQNetwork():
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
 
         with tf.name_scope('Convolutional_Layer_1'):
-            W_conv1 = _create_weights([5, 5, depth, 32])
-            b_conv1 = _create_bias([32])
-            h_conv1 = tf.nn.relu(_create_conv2d(self.x, W_conv1) + b_conv1)
-
-        with tf.name_scope('Max_Pool_1'):
-            # Reshape [n, width, height, 32] output to [n, width/2, height/2, 32].
-            h_pool1 = _create_max_pool_2x2(h_conv1)
+            W_conv1 = _create_weights([8, 8, depth, 16])
+            b_conv1 = _create_bias([16])
+            h_conv1 = tf.nn.relu(_create_conv2d(self.x, W_conv1, stride=4) + b_conv1)
 
         with tf.name_scope('Convolutional_Layer_2'):
-            W_conv2 = _create_weights([5, 5, 32, 64])
-            b_conv2 = _create_bias([64])
-            h_conv2 = tf.nn.relu(_create_conv2d(h_pool1, W_conv2) + b_conv2)
+            W_conv2 = _create_weights([4, 4, 16, 32])
+            b_conv2 = _create_bias([32])
+            h_conv2 = tf.nn.relu(_create_conv2d(h_conv1, W_conv2, stride=2) + b_conv2)
 
-        with tf.name_scope('Max_Pool_2'):
-            # Reshape [n, width/2, height/2, 64] output to [n, width/4, height/4, 64].
-            h_pool2 = _create_max_pool_2x2(h_conv2)
-
-        # Flatten the [n, width/4, height/4, 64] output.
-        h_pool2_flat = tf.reshape(h_pool2, [-1, width * height * 4])
+        # Flatten the output to feed it into the fully connected layer.
+        post_conv_height = math.ceil(math.ceil(height / 4) / 2)
+        post_conv_width = math.ceil(math.ceil(width / 4) / 2)
+        num_neurons = post_conv_height * post_conv_width * 32
+        h_pool2_flat = tf.reshape(h_conv2, [-1, num_neurons])
 
         with tf.name_scope('Fully_Connected_Layer'):
-            W_fc = _create_weights([width * height * 4, 256])
+            W_fc = _create_weights([num_neurons, 256])
             b_fc = _create_bias([256])
             h_fc = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc) + b_fc)
 

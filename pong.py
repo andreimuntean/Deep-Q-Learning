@@ -16,7 +16,7 @@ parser.add_argument('--save_path',
                     help='saves the model at the specified path',
                     default='checkpoints/tmp/model.ckpt')
 
-parser.add_argument('--save_frequency',
+parser.add_argument('--save_interval',
                     help='time step interval at which to save the model',
                     type=int,
                     default=10000)
@@ -30,12 +30,12 @@ args = parser.parse_args()
 
 load_path = args.load_path
 save_path = args.save_path
-save_frequency = args.save_frequency
+save_interval = args.save_interval
 num_episodes = args.num_episodes
 
 batch_size = 32
 wait_before_training = 5000
-train_frequency = 3
+train_interval = 1
 discount = 0.99
 
 env = environment.AtariWrapper(gym.make('Pong-v0'),
@@ -44,7 +44,6 @@ env = environment.AtariWrapper(gym.make('Pong-v0'),
                                replay_memory_capacity=20000)
 
 epsilon_history = []
-loss_history = []
 reward_history = []
 
 with tf.Session() as sess:
@@ -59,16 +58,15 @@ with tf.Session() as sess:
     t = 0
     for i in range(1, num_episodes + 1):
         # Epsilon anneals from 1 to 0.05.
-        epsilon = max(min(10 / i, 1), 0.05)
-        episode_loss = []
-        total_reward = 0
+        epsilon = max(min(20 / i, 1), 0.05)
+        episode_reward = 0
 
         while not env.done:
             t += 1
             env.render()
 
             # Occasionally train.
-            if t > wait_before_training and t % train_frequency == 0:
+            if t > wait_before_training and t % train_interval == 0:
                 # These operations might be confusing if you forget that they're vectorized.
                 experiences = env.sample_experiences(batch_size)
                 states = np.stack(experiences[:, 0], axis=0)
@@ -80,7 +78,7 @@ with tf.Session() as sess:
                 # Estimate action values.
                 Q = network.eval_Q(states, actions_i)
 
-                # Determine the true Q values for the specified actions.
+                # Determine the true action values.
                 #
                 #                    { r, if next state is terminal
                 # Q(state, action) = {
@@ -88,8 +86,6 @@ with tf.Session() as sess:
                 Q_ = rewards + ~done * discount * network.eval_optimal_action_value(next_states)
                 
                 # Estimate error and update weights.
-                loss = network.eval_loss(Q, Q_)
-                episode_loss.append(loss)
                 network.train(states, actions_i, Q_)
 
             # Occasionally try a random action (explore).
@@ -99,20 +95,15 @@ with tf.Session() as sess:
                 state = np.expand_dims(env.get_state(), axis=0)
                 action = env.action_space[network.eval_optimal_action(state)[0]]
 
-            total_reward += env.step(action)
+            episode_reward += env.step(action)
 
-            if save_path and t % save_frequency == 0:
+            if save_path and t % save_interval == 0:
                 saver.save(sess, save_path)
                 print('[{}] Saved model at "{}".'.format(datetime.datetime.now(), save_path))
 
         epsilon_history.append(epsilon)
-        loss_history.append(np.mean(episode_loss) if episode_loss else -1)
-        reward_history.append(total_reward)
-        print('Episode: {}  Loss: {}  Reward: {}  Epsilon: {}'.format(i,
-                                                                      loss_history[-1],
-                                                                      total_reward,
-                                                                      epsilon))
-
+        reward_history.append(episode_reward)
+        print('Episode: {}  Reward: {}  Epsilon: {}'.format(i, episode_reward, epsilon))
         env.restart()
 
 if save_path:
@@ -121,17 +112,12 @@ if save_path:
 
 print('Total timesteps:', t)
 
-plt.subplot(311)
-plt.ylabel('Loss')
-plt.xlabel('Episode')
-plt.plot(loss_history)
-
-plt.subplot(312)
+plt.subplot(211)
 plt.ylabel('Reward')
 plt.xlabel('Episode')
 plt.plot(reward_history)
 
-plt.subplot(313)
+plt.subplot(212)
 plt.ylabel('Explore / Exploit')
 plt.xlabel('Episode')
 plt.plot(epsilon_history)
