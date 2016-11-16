@@ -19,7 +19,7 @@ parser.add_argument('--save_path',
 parser.add_argument('--save_interval',
                     help='time step interval at which to save the model',
                     type=int,
-                    default=10000)
+                    default=30000)
 
 parser.add_argument('--num_episodes',
                     help='number of episodes that will be played',
@@ -34,27 +34,28 @@ parser.add_argument('--start_epsilon',
 parser.add_argument('--end_epsilon',
                     help='final value for epsilon (exploration chance)',
                     type=float,
-                    default=0.1)
+                    default=0)
 
 parser.add_argument('--anneal_duration',
                     help='number of episodes to decrease epsilon from start_epsilon to end_epsilon',
                     type=int,
-                    default=100)
+                    default=250)
 
 args = parser.parse_args()
 
-load_path = args.load_path
-save_path = args.save_path
-save_interval = args.save_interval
-num_episodes = args.num_episodes
-start_epsilon = args.start_epsilon
-end_epsilon = args.end_epsilon
-anneal_duration = args.anneal_duration
+load_path = args.load_path # Loads a trained model from the specified path.
+save_path = args.save_path # Saves the model at the specified path.
+save_interval = args.save_interval # Time step interval at which to save the model.
+num_episodes = args.num_episodes # Number of episodes that will be played.
+start_epsilon = args.start_epsilon # Initial value for epsilon (exploration chance).
+end_epsilon = args.end_epsilon # Final value for epsilon (exploration chance).
+anneal_duration = args.anneal_duration # Number of episodes needed to decrease epsilon from
+                                       # start_epsilon to end_epsilon.
 
-batch_size = 32
-wait_before_training = 5000
-train_interval = 4
-discount = 0.99
+batch_size = 1024 # Number of experiences sampled and trained on at once.
+wait_before_training = 5000 # Number of experiences to accumulate before training starts.
+train_interval = 100 # Number of experiences to accumulate before another round of training starts.
+discount = 0.99 # Discount factor for future rewards.
 
 env = environment.AtariWrapper(gym.make('Pong-v0'),
                                action_space=[0, 2, 3], # 'NONE', 'UP' and 'DOWN'.
@@ -76,15 +77,16 @@ with tf.Session() as sess:
     epsilon = start_epsilon
     t = 0
 
-    for i in range(1, num_episodes + 1):
+    for i in range(num_episodes):
         # Epsilon anneals from start_epsilon to end_epsilon.
-        if epsilon > end_epsilon:
-            epsilon -= (start_epsilon - end_epsilon) / anneal_duration
-        
+        epsilon = max(end_epsilon,
+                      (start_epsilon * (anneal_duration - i) + end_epsilon * i) / anneal_duration)
         episode_reward = 0
+        episode_loss = []
 
         while not env.done:
             t += 1
+            env.render()
 
             # Occasionally train.
             if t > wait_before_training and t % train_interval == 0:
@@ -104,7 +106,7 @@ with tf.Session() as sess:
                 Q_ = rewards + ~done * discount * network.eval_optimal_action_value(next_states)
                 
                 # Estimate action values, measure errors and update weights.
-                network.train(states, actions_i, Q_, learning_rate=1e-4)
+                network.train(states, actions_i, Q_, learning_rate=1e-6)
 
             # Occasionally try a random action (explore).
             if np.random.rand() < epsilon:
@@ -121,7 +123,7 @@ with tf.Session() as sess:
 
         epsilon_history.append(epsilon)
         reward_history.append(episode_reward)
-        print('Episode: {}  Reward: {}  Epsilon: {}'.format(i, episode_reward, epsilon))
+        print('Episode: {}  Reward: {}  Epsilon: {}'.format(i + 1, episode_reward, epsilon))
         env.restart()
 
 if save_path:
