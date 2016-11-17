@@ -76,7 +76,7 @@ class DeepQNetwork():
         self.optimal_action_value = tf.reduce_max(h_output, 1, name='Optimal_Action_Value')
 
         # Estimate the value of the specified action.
-        self.action = tf.placeholder(tf.int32, name='Action')
+        self.action = tf.placeholder(tf.uint8, name='Action')
         one_hot_action = tf.one_hot(self.action, num_actions)
         self.Q = tf.reduce_sum(h_output * one_hot_action, 1, name='Estimated_Action_Value')
 

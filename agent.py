@@ -66,14 +66,8 @@ class Agent():
 
             # Occasionally train.
             if self.t > self.wait_before_training and self.t % self.train_interval == 0:
-                # These operations might be confusing if you forget that they're vectorized.
-                experiences = self.env.sample_experiences(self.batch_size)
-                states = np.stack(experiences[:, 0], axis=0)
-                actions_i = np.stack([self.env.action_space.index(a) for a in experiences[:, 1]],
-                                     axis=0)
-                rewards = np.stack(experiences[:, 2], axis=0)
-                next_states = np.stack(experiences[:, 3], axis=0)
-                done = np.stack(experiences[:, 4], axis=0)
+                states, actions, rewards, next_states, done = self.env.sample_experiences(self.batch_size)
+                actions_i = np.stack([self.env.action_space.index(a) for a in actions], axis=0)
 
                 # Determine the true action values.
                 #

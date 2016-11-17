@@ -74,7 +74,7 @@ args = parser.parse_args()
 env = environment.AtariWrapper(gym.make('Pong-v0'),
                                action_space=[0, 2, 3], # 'NONE', 'UP' and 'DOWN'.
                                observations_per_state=4,
-                               replay_memory_capacity=24000)
+                               replay_memory_capacity=100000)
 
 with tf.Session() as sess:
     learner = agent.Agent(sess,
