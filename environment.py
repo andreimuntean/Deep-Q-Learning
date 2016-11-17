@@ -122,7 +122,7 @@ class AtariWrapper:
         done = np.empty(exp_count, np.bool)
 
         for i, sampled_i in enumerate(indexes):
-            observation_i = range(sampled_i, sampled_i + self.observations_per_state + 1)
+            observation_i = range(sampled_i, sampled_i + self.observations_per_state)
             observations = [self.observations[j] for j in observation_i]
 
             states[i] = _get_state(observations[:self.observations_per_state])
