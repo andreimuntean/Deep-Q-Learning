@@ -95,8 +95,8 @@ class AtariWrapper:
         
         observation, reward, self.done, _ = self.env.step(action)
 
-        self.observations.append(_preprocess_observation(observation))
         self.info.append((action, reward, self.done))
+        self.observations.append(_preprocess_observation(observation))
 
         return reward
 
@@ -122,7 +122,10 @@ class AtariWrapper:
         done = np.empty(exp_count, np.bool)
 
         for i, sampled_i in enumerate(indexes):
-            observation_i = range(sampled_i, sampled_i + self.observations_per_state)
+            # Initial state = [sampled_i, sampled_i + observations_per_state].
+            # Next state = [sampled_i + 1, sampled_i + observations_per_state + 1].
+            # So final range (their union) is [sampled_i, sampled_i + observations_per_state + 1].
+            observation_i = range(sampled_i, sampled_i + self.observations_per_state + 1)
             observations = [self.observations[j] for j in observation_i]
 
             states[i] = _get_state(observations[:self.observations_per_state])
@@ -148,11 +151,11 @@ class AtariWrapper:
     def _initialize_replay_memory(self):
         """Clears the experience buffer then creates the initial experience by acting randomly."""
 
-        self.observations = deque(maxlen=self.replay_memory_capacity +
-                                         self.observations_per_state - 1)
+        self.observations = deque(maxlen=self.replay_memory_capacity + self.observations_per_state)
         self.info = deque(maxlen=self.replay_memory_capacity)
 
-        # Prepare the first state by performing random actions.
+        # Prepare the first state by performing random actions. States are represented by
+        # observations_per_state consecutive observations.
         for i in range(self.observations_per_state):
             observation, _, _, _ = self.env.step(self.sample_action())
             self.observations.append(_preprocess_observation(observation))
@@ -162,5 +165,5 @@ class AtariWrapper:
         observation, reward, self.done, _ = self.env.step(action)
 
         # Store the first experience.
-        self.observations.append(_preprocess_observation(observation))
         self.info.append((action, reward, self.done))
+        self.observations.append(_preprocess_observation(observation))
