@@ -10,15 +10,15 @@ import tensorflow as tf
 
 
 def _create_weights(shape):
-    # Initialize ReLU neurons with slight noise to avoid symmetry.
-    value = tf.truncated_normal(shape, stddev=0.1, name='Weights')
-    return tf.Variable(value)
+    # Initialize parameters with slight noise to avoid symmetry.
+    value = tf.truncated_normal(shape, stddev=0.1)
+    return tf.Variable(value, name='Weights')
 
 
 def _create_bias(shape):
     # Initialize with a slight positive bias to prevent ReLU neurons from dying.
-    value = tf.constant(0.1, shape=shape, name='Bias')
-    return tf.Variable(value)
+    value = tf.constant(0.1, shape=shape)
+    return tf.Variable(value, name='Bias')
 
 
 def _create_conv2d(x, W, stride):
