@@ -74,13 +74,13 @@ class AtariWrapper:
 
         self.env.reset()
         self.done = False
-        
+
     def step(self, action):
         """Performs the specified action.
 
         Returns:
             The reward.
-        
+
         Raises:
             Exception: If the game ended.
             ValueError: If the action is not valid.
@@ -92,7 +92,7 @@ class AtariWrapper:
         if action not in self.action_space:
             raise ValueError('Action "{}" is invalid. Valid actions: {}.'.format(action,
                                                                                  self.action_space))
-        
+
         observation, reward, self.done, _ = self.env.step(action)
 
         self.info.append((action, reward, self.done))

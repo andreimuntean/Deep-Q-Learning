@@ -1,7 +1,8 @@
 """Defines a deep Q network architecture.
 
 Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforcement Learning'
-(Mnih et al., 2013).
+(Mnih et al., 2013) and 'Human-level control through deep reinforcement learning' (Mnih et al.,
+2015).
 """
 
 import math
@@ -21,7 +22,7 @@ def _create_bias(shape):
 
 
 def _create_conv2d(x, W, stride):
-    return tf.nn.conv2d(x, W, strides=[1, stride, stride, 1], padding='SAME')
+    return tf.nn.conv2d(x, W, strides=[1, stride, stride, 1], padding='VALID')
 
 
 class DeepQNetwork():
@@ -42,32 +43,37 @@ class DeepQNetwork():
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
 
         with tf.name_scope('Convolutional_Layer_1'):
-            W_conv1 = _create_weights([8, 8, depth, 16])
-            b_conv1 = _create_bias([16])
+            W_conv1 = _create_weights([8, 8, depth, 32])
+            b_conv1 = _create_bias([32])
             h_conv1 = tf.nn.relu(_create_conv2d(self.x, W_conv1, stride=4) + b_conv1)
 
         with tf.name_scope('Convolutional_Layer_2'):
-            W_conv2 = _create_weights([4, 4, 16, 32])
-            b_conv2 = _create_bias([32])
+            W_conv2 = _create_weights([4, 4, 32, 64])
+            b_conv2 = _create_bias([64])
             h_conv2 = tf.nn.relu(_create_conv2d(h_conv1, W_conv2, stride=2) + b_conv2)
 
+        with tf.name_scope('Convolutional_Layer_3'):
+            W_conv3 = _create_weights([3, 3, 64, 64])
+            b_conv3 = _create_bias([64])
+            h_conv3 = tf.nn.relu(_create_conv2d(h_conv2, W_conv3, stride=1) + b_conv3)
+
         # Flatten the output to feed it into the fully connected layer.
-        post_conv_height = math.ceil(math.ceil(height / 4) / 2)
-        post_conv_width = math.ceil(math.ceil(width / 4) / 2)
-        num_neurons = post_conv_height * post_conv_width * 32
-        h_pool2_flat = tf.reshape(h_conv2, [-1, num_neurons])
+        post_conv_height = math.ceil((math.ceil((height - 7) / 4) - 3) / 2) - 2
+        post_conv_width = math.ceil((math.ceil((width - 7) / 4) - 3) / 2) - 2
+        num_params = post_conv_height * post_conv_width * 64
+        h_pool3_flat = tf.reshape(h_conv3, [-1, num_params])
 
         with tf.name_scope('Fully_Connected_Layer'):
-            W_fc = _create_weights([num_neurons, 256])
-            b_fc = _create_bias([256])
-            h_fc = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc) + b_fc)
+            W_fc = _create_weights([num_params, 512])
+            b_fc = _create_bias([512])
+            h_fc = tf.nn.relu(tf.matmul(h_pool3_flat, W_fc) + b_fc)
 
         # Implement dropout.
         self.keep_prob = tf.placeholder(tf.float32, name='Keep_Prob')
         h_fc_drop = tf.nn.dropout(h_fc, self.keep_prob)
 
         with tf.name_scope('Output'):
-            W_output = _create_weights([256, num_actions])
+            W_output = _create_weights([512, num_actions])
             b_output = _create_bias([num_actions])
             h_output = tf.matmul(h_fc_drop, W_output) + b_output
 
@@ -112,14 +118,14 @@ class DeepQNetwork():
             state: A state. Can be batched into multiple states.
             action: An action. Can be batched into multiple actions.
         """
-        
+
         return self.sess.run(self.Q, feed_dict={self.x: state,
                                                 self.action: action,
                                                 self.keep_prob: 1})
 
     def eval_loss(self, Q, Q_):
         """Compares a predicted Q value with an observed Q value."""
-        
+
         return self.sess.run(self.loss, feed_dict={self.Q: Q, self.Q_: Q_})
 
     def train(self, state, action, Q_, learning_rate=1e-6, dropout_prob=0.2):
@@ -133,7 +139,7 @@ class DeepQNetwork():
             dropout_prob: Likelihood of individual neurons from fully connected layers becoming
                 inactive.
         """
-        
+
         self.sess.run(self.train_step, feed_dict={self.x: state,
                                                   self.action: action,
                                                   self.Q_: Q_,

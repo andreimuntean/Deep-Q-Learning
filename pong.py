@@ -20,7 +20,7 @@ parser.add_argument('--save_interval',
                     metavar='TIME_STEPS',
                     help='time step interval at which to save the model',
                     type=int,
-                    default=30000)
+                    default=10000)
 
 parser.add_argument('--num_episodes',
                     metavar='EPISODES',
@@ -38,7 +38,7 @@ parser.add_argument('--end_epsilon',
                     metavar='PERCENTAGE',
                     help='final value for epsilon (exploration chance)',
                     type=float,
-                    default=0)
+                    default=0.05)
 
 parser.add_argument('--anneal_duration',
                     metavar='EPISODES',
@@ -56,19 +56,25 @@ parser.add_argument('--train_interval',
                     metavar='TIME_STEPS',
                     help='number of experiences to accumulate before next round of training starts',
                     type=int,
-                    default=100)
+                    default=4)
 
 parser.add_argument('--batch_size',
                     metavar='N',
                     help='number of experiences sampled and trained on at once',
                     type=int,
-                    default=1024)
+                    default=32)
 
 parser.add_argument('--discount',
                     metavar='PERCENTAGE',
                     help='discount factor for future rewards',
                     type=float,
                     default=0.99)
+
+parser.add_argument('--target_network_update_interval',
+                    metavar='UPDATES',
+                    help='number of network updates before resetting the target network',
+                    type=int,
+                    default=500)
 
 args = parser.parse_args()
 env = environment.AtariWrapper(gym.make('Pong-v0'),
@@ -85,7 +91,8 @@ with tf.Session() as sess:
                           args.wait_before_training,
                           args.train_interval,
                           args.batch_size,
-                          args.discount)
+                          args.discount,
+                          args.target_network_update_interval)
 
     sess.run(tf.initialize_all_variables())
     saver = tf.train.Saver()
@@ -97,8 +104,7 @@ with tf.Session() as sess:
 
     for i in range(1, args.num_episodes + 1):
         reward = learner.train(render=True)
-        epsilon = learner._get_epsilon()
-        print('Episode: {}  Reward: {}  Epsilon: {}'.format(i, reward, epsilon))
+        print('Episode: {}  Reward: {}  Epsilon: {}'.format(i, reward, learner.get_epsilon()))
 
         if args.save_path and learner.t > save_next or i == args.num_episodes:
             saver.save(sess, args.save_path)
