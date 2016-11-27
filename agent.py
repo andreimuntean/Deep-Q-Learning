@@ -16,13 +16,13 @@ class Agent():
                  sess,
                  env,
                  start_epsilon=1,
-                 end_epsilon=0.05,
+                 end_epsilon=0.1,
                  anneal_duration=500,
                  wait_before_training=5000,
                  train_interval=4,
                  batch_size=32,
                  discount=0.99,
-                 target_network_update_interval=500):
+                 target_network_update_factor=0.001):
         """An agent that learns to play Atari games using deep Q-learning.
 
         Args:
@@ -38,9 +38,8 @@ class Agent():
                 starts.
             batch_size: Number of experiences sampled and trained on at once.
             discount: Discount factor for future rewards.
-            target_network_update_interval: Number of network updates before target Q-network values
-                are reset to those of the actual Q-network. During training, this delayed target
-                network is used to improve stability.
+            target_network_update_factor: Rate at which target Q-network values shift toward actual
+                Q-network values. This delayed target network improves training stability.
         """
 
         self.sess = sess
@@ -53,7 +52,6 @@ class Agent():
         self.train_interval = train_interval
         self.batch_size = batch_size
         self.discount = discount
-        self.target_network_update_interval = target_network_update_interval
         self.t = 0
         self.episodes_played = 0
 
@@ -64,6 +62,11 @@ class Agent():
 
         # Reset target Q-network values to the actual Q-network values.
         self.reset_target_dqn = [old.assign(new) for old, new in zip(target_dqn_params, dqn_params)]
+
+        # Shift target Q-network values toward actual Q-network values.
+        tau = target_network_update_factor
+        self.update_target_dqn = [old.assign(tau * new + (1 - tau) * old)
+                                  for old, new in zip(target_dqn_params, dqn_params)]
 
     def train(self, render=True, learning_rate=1e-6):
         """Trains the deep Q-network by playing for one episode.
@@ -105,9 +108,8 @@ class Agent():
                 # Estimate action values, measure errors and update weights.
                 self.dqn.train(states, actions_i, Q_, learning_rate=learning_rate)
 
-                # Occasionally update target Q-network.
-                if self.get_num_updates() % self.target_network_update_interval == 0:
-                    self.sess.run(self.reset_target_dqn)
+                # Shift target Q-network values toward actual Q-network values.
+                self.sess.run(self.update_target_dqn)
 
             # Occasionally try a random action (explore).
             if np.random.rand() < epsilon:

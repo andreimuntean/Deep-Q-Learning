@@ -64,17 +64,23 @@ parser.add_argument('--batch_size',
                     type=int,
                     default=32)
 
+parser.add_argument('--learning_rate',
+                    metavar='PERCENTAGE',
+                    help='rate at which the network learns from new examples',
+                    type=float,
+                    default=1e-6)
+
 parser.add_argument('--discount',
                     metavar='PERCENTAGE',
                     help='discount factor for future rewards',
                     type=float,
                     default=0.99)
 
-parser.add_argument('--target_network_update_interval',
-                    metavar='UPDATES',
-                    help='number of network updates before resetting the target network',
-                    type=int,
-                    default=500)
+parser.add_argument('--target_network_update_factor',
+                    metavar='PERCENTAGE',
+                    help='rate at which target Q-network values shift toward real Q-network values',
+                    type=float,
+                    default=0.001)
 
 args = parser.parse_args()
 env = environment.AtariWrapper(gym.make('Pong-v0'),
@@ -92,7 +98,7 @@ with tf.Session() as sess:
                           args.train_interval,
                           args.batch_size,
                           args.discount,
-                          args.target_network_update_interval)
+                          args.target_network_update_factor)
 
     sess.run(tf.initialize_all_variables())
     saver = tf.train.Saver()
@@ -103,7 +109,7 @@ with tf.Session() as sess:
         print('Model restored.')
 
     for i in range(1, args.num_episodes + 1):
-        reward = learner.train(render=True)
+        reward = learner.train(render=True, learning_rate=args.learning_rate)
         print('Episode: {}  Reward: {}  Epsilon: {}'.format(i, reward, learner.get_epsilon()))
 
         if args.save_path and learner.t > save_next or i == args.num_episodes:
