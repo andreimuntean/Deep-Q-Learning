@@ -17,7 +17,7 @@ parser.add_argument('--save_path',
                     default='checkpoints/tmp/model.ckpt')
 
 parser.add_argument('--save_interval',
-                    metavar='TIME_STEPS',
+                    metavar='TIME STEPS',
                     help='time step interval at which to save the model',
                     type=int,
                     default=10000)
@@ -29,13 +29,13 @@ parser.add_argument('--num_episodes',
                     default=1000)
 
 parser.add_argument('--start_epsilon',
-                    metavar='PERCENTAGE',
+                    metavar='EPSILON',
                     help='initial value for epsilon (exploration chance)',
                     type=float,
                     default=1)
 
 parser.add_argument('--end_epsilon',
-                    metavar='PERCENTAGE',
+                    metavar='EPSILON',
                     help='final value for epsilon (exploration chance)',
                     type=float,
                     default=0.05)
@@ -47,13 +47,13 @@ parser.add_argument('--anneal_duration',
                     default=300)
 
 parser.add_argument('--wait_before_training',
-                    metavar='TIME_STEPS',
+                    metavar='TIME STEPS',
                     help='number of experiences to accumulate before training starts',
                     type=int,
                     default=5000)
 
 parser.add_argument('--train_interval',
-                    metavar='TIME_STEPS',
+                    metavar='TIME STEPS',
                     help='number of experiences to accumulate before next round of training starts',
                     type=int,
                     default=4)
@@ -65,19 +65,19 @@ parser.add_argument('--batch_size',
                     default=32)
 
 parser.add_argument('--learning_rate',
-                    metavar='PERCENTAGE',
+                    metavar='LAMBDA',
                     help='rate at which the network learns from new examples',
                     type=float,
                     default=1e-6)
 
 parser.add_argument('--discount',
-                    metavar='PERCENTAGE',
+                    metavar='GAMMA',
                     help='discount factor for future rewards',
                     type=float,
                     default=0.99)
 
 parser.add_argument('--target_network_update_factor',
-                    metavar='PERCENTAGE',
+                    metavar='TAU',
                     help='rate at which target Q-network values shift toward real Q-network values',
                     type=float,
                     default=0.001)
