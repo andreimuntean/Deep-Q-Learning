@@ -52,8 +52,9 @@ class Agent():
         self.train_interval = train_interval
         self.batch_size = batch_size
         self.discount = discount
-        self.t = 0
+        self.time_step = 0
         self.episodes_played = 0
+        self.epsilon = self._get_epsilon()
 
         # Create target Q-network.
         dqn_params = tf.trainable_variables()
@@ -79,22 +80,22 @@ class Agent():
         if self.env.done:
             self.env.restart()
 
-        if self.t == 0:
+        if self.time_step == 0:
             # Initialize target Q-network.
             self.sess.run(self.reset_target_dqn)
 
+        self.epsilon = self._get_epsilon()
         self.episodes_played += 1
         episode_reward = 0
-        epsilon = self.get_epsilon()
 
         while not self.env.done:
-            self.t += 1
+            self.time_step += 1
 
             if render:
                 self.env.render()
 
             # Occasionally train.
-            if self.t > self.wait_before_training and self.t % self.train_interval == 0:
+            if self.time_step > self.wait_before_training and self.time_step % self.train_interval == 0:
                 states, actions, rewards, next_states, done = self.env.sample_experiences(self.batch_size)
                 actions_i = np.stack([self.env.action_space.index(a) for a in actions], axis=0)
 
@@ -112,7 +113,7 @@ class Agent():
                 self.sess.run(self.update_target_dqn)
 
             # Occasionally try a random action (explore).
-            if np.random.rand() < epsilon:
+            if np.random.rand() < self.epsilon:
                 action = self.env.sample_action()
             else:
                 state = np.expand_dims(self.env.get_state(), axis=0)
@@ -144,20 +145,14 @@ class Agent():
 
         return episode_reward
 
-    def get_epsilon(self):
+    def _get_epsilon(self):
         """Gets the epsilon value (exploration chance) for the current episode."""
 
-        # Epsilon anneals from start_epsilon to end_epsilon.
-        if self.anneal_duration == 0:
+        # Epsilon anneals linearly from start_epsilon to end_epsilon.
+        if self.anneal_duration <= 0:
             return self.end_epsilon
 
-        start_weight = (self.anneal_duration - self.episodes_played) / self.anneal_duration
-        end_weight = self.episodes_played / self.anneal_duration
+        epsilon = (self.start_epsilon - self.episodes_played
+                   * (self.start_epsilon - self.end_epsilon) / self.anneal_duration)
 
-        return max(self.end_epsilon,
-                   self.start_epsilon * start_weight + self.end_epsilon * end_weight)
-
-    def get_num_updates(self):
-        """Gets the number of learning steps executed by the agent."""
-
-        return max(0, math.floor((self.t - self.wait_before_training) / self.train_interval))
+        return max(epsilon, self.end_epsilon)

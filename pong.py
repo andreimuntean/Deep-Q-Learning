@@ -18,15 +18,15 @@ parser.add_argument('--save_path',
 
 parser.add_argument('--save_interval',
                     metavar='TIME STEPS',
-                    help='time step interval at which to save the model',
+                    help='approximate time step interval at which to save the model',
                     type=int,
-                    default=10000)
+                    default=50000)
 
 parser.add_argument('--num_episodes',
                     metavar='EPISODES',
                     help='number of episodes that will be played',
                     type=int,
-                    default=1000)
+                    default=10000)
 
 parser.add_argument('--start_epsilon',
                     metavar='EPSILON',
@@ -38,13 +38,13 @@ parser.add_argument('--end_epsilon',
                     metavar='EPSILON',
                     help='final value for epsilon (exploration chance)',
                     type=float,
-                    default=0.05)
+                    default=0.1)
 
 parser.add_argument('--anneal_duration',
                     metavar='EPISODES',
                     help='number of episodes to decrease epsilon from start_epsilon to end_epsilon',
                     type=int,
-                    default=300)
+                    default=1000)
 
 parser.add_argument('--wait_before_training',
                     metavar='TIME STEPS',
@@ -68,7 +68,7 @@ parser.add_argument('--learning_rate',
                     metavar='LAMBDA',
                     help='rate at which the network learns from new examples',
                     type=float,
-                    default=1e-6)
+                    default=0.00025)
 
 parser.add_argument('--discount',
                     metavar='GAMMA',
@@ -80,7 +80,7 @@ parser.add_argument('--target_network_update_factor',
                     metavar='TAU',
                     help='rate at which target Q-network values shift toward real Q-network values',
                     type=float,
-                    default=0.001)
+                    default=0.0001)
 
 args = parser.parse_args()
 env = environment.AtariWrapper(gym.make('Pong-v0'),
@@ -110,9 +110,9 @@ with tf.Session() as sess:
 
     for i in range(1, args.num_episodes + 1):
         reward = learner.train(render=True, learning_rate=args.learning_rate)
-        print('Episode: {}  Reward: {}  Epsilon: {}'.format(i, reward, learner.get_epsilon()))
+        print('Episode: {}  Reward: {}  Epsilon: {}'.format(i, reward, learner.epsilon))
 
-        if args.save_path and learner.t > save_next or i == args.num_episodes:
+        if args.save_path and learner.time_step > save_next or i == args.num_episodes:
             saver.save(sess, args.save_path)
             print('[{}] Saved model at "{}".'.format(datetime.datetime.now(), args.save_path))
             save_next += args.save_interval
