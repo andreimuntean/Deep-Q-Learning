@@ -47,11 +47,11 @@ PARSER.add_argument('--epoch_length',
                     type=int,
                     default=100000)
 
-PARSER.add_argument('--num_tests',
-                    metavar='TESTS',
-                    help="number of tests after each epoch",
+PARSER.add_argument('--test_length',
+                    metavar='TIME STEPS',
+                    help="number of time steps per test",
                     type=int,
-                    default=200)
+                    default=100000)
 
 PARSER.add_argument('--start_epsilon',
                     metavar='EPSILON',
@@ -126,47 +126,76 @@ PARSER.add_argument('--observations_per_state',
                     default=4)
 
 
-def eval_model(env, player, num_tests, save_dir):
+def eval_model(env, player, test_length, save_dir):
     """Evaluates the performance of the specified agent. Writes results in a CSV file."""
 
-    avg_reward = 0
-    avg_Q = 0
-    avg_min_Q = 0
-    min_min_Q = 1e7
-    avg_max_Q = 0
-    max_max_Q = -1e7
+    total_reward = 0
+    total_Q = 0
+    summed_min_Qs = 0
+    min_Q = 1e7
+    summed_max_Qs = 0
+    max_Q = -1e7
+    time_step = 0
+    num_games_finished = 0
 
-    for _ in range(num_tests):
-        reward = 0
-        total_Q = 0
-        min_Q = 1e7
-        max_Q = -1e7
-        time_step = 0
+    while time_step < test_length:
+        local_total_reward = 0
+        local_total_Q = 0
+        local_min_Q = 1e7
+        local_max_Q = -1e7
+        local_time_step = 0
         env.reset()
 
-        while not env.done:
+        while time_step + local_time_step < test_length and not env.done:
+            local_time_step += 1
             state = env.get_state()
             action = player.get_action(state)
             Q = player.dqn.eval_optimal_action_value(np.expand_dims(state, axis=0))[0]
-            time_step += 1
 
             # Record statistics.
-            reward += env.step(action)
-            total_Q += Q
-            min_Q = min(min_Q, Q)
-            max_Q = max(max_Q, Q)
+            local_total_reward += env.step(action)
+            local_total_Q += Q
+            local_min_Q = min(local_min_Q, Q)
+            local_max_Q = max(local_max_Q, Q)
 
-        avg_reward += reward / num_tests
-        avg_Q += total_Q / time_step / num_tests
-        avg_min_Q += min_Q / num_tests
-        avg_max_Q += max_Q / num_tests
-        min_min_Q = min(min_min_Q, min_Q)
-        max_max_Q = max(max_max_Q, max_Q)
+        if not env.done:
+            # Discard unfinished game.
+            break
+
+        num_games_finished += 1
+        time_step += local_time_step
+        total_reward += local_total_reward
+        total_Q += local_total_Q
+        summed_min_Qs += local_min_Q
+        summed_max_Qs += local_max_Q
+        min_Q = min(min_Q, local_min_Q)
+        max_Q = max(max_Q, local_max_Q)
 
     # Save results.
-    with open(os.path.join(save_dir, 'log.csv'), 'a') as csvfile:
+    save_path = os.path.join(save_dir, 'test_results.csv')
+
+    with open(save_path, 'a') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow([avg_reward, avg_Q, avg_min_Q, min_min_Q, avg_max_Q, max_max_Q])
+
+        if num_games_finished > 0:
+            # Extract more statistics.
+            avg_reward = total_reward / num_games_finished
+            avg_Q = total_Q / time_step
+            avg_min_Q = summed_min_Qs / num_games_finished
+            avg_max_Q = summed_max_Qs / num_games_finished
+
+            writer.writerow([num_games_finished,
+                             avg_reward,
+                             avg_Q,
+                             avg_min_Q,
+                             min_Q,
+                             avg_max_Q,
+                             max_Q])
+        else:
+            # The agent got stuck during the first game.
+            writer.writerow([0, 0, 0, 0, 0, 0, 0])
+
+    print('[{}] Wrote test results to "{}".'.format(datetime.datetime.now(), save_path))
 
 
 def main(args):
@@ -214,7 +243,7 @@ def main(args):
                 saver.save(sess, save_path)
                 print('[{}] Saved model to "{}".'.format(datetime.datetime.now(), save_path))
 
-            eval_model(env, player, args.num_tests, args.save_dir)
+            eval_model(env, player, args.test_length, args.save_dir)
 
 
 if __name__ == '__main__':
