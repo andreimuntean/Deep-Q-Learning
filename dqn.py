@@ -11,13 +11,13 @@ import tensorflow as tf
 
 def _create_weights(shape):
     # Initialize parameters with slight noise to avoid symmetry.
-    value = tf.truncated_normal(shape, stddev=0.1)
+    value = tf.truncated_normal(shape, stddev=0.05)
     return tf.Variable(value, name='Weights')
 
 
 def _create_bias(shape):
     # Initialize with a slight positive bias to prevent ReLU neurons from dying.
-    value = tf.constant(0.1, shape=shape)
+    value = tf.constant(0.05, shape=shape)
     return tf.Variable(value, name='Bias')
 
 
@@ -61,19 +61,19 @@ class DeepQNetwork():
         post_conv_height = math.ceil((math.ceil((height - 7) / 4) - 3) / 2) - 2
         post_conv_width = math.ceil((math.ceil((width - 7) / 4) - 3) / 2) - 2
         num_params = post_conv_height * post_conv_width * 64
-        h_pool3_flat = tf.reshape(h_conv3, [-1, num_params])
+        h_flat = tf.reshape(h_conv3, [-1, num_params])
 
         with tf.name_scope('Fully_Connected_Layer'):
-            W_fc = _create_weights([num_params, 512])
-            b_fc = _create_bias([512])
-            h_fc = tf.nn.relu(tf.matmul(h_pool3_flat, W_fc) + b_fc)
+            W_fc = _create_weights([num_params, 2048])
+            b_fc = _create_bias([2048])
+            h_fc = tf.nn.relu(tf.matmul(h_flat, W_fc) + b_fc)
 
         # Implement dropout.
         self.keep_prob = tf.placeholder(tf.float32, name='Keep_Prob')
         h_fc_drop = tf.nn.dropout(h_fc, self.keep_prob)
 
         with tf.name_scope('Output'):
-            W_output = _create_weights([512, num_actions])
+            W_output = _create_weights([2048, num_actions])
             b_output = _create_bias([num_actions])
             h_output = tf.matmul(h_fc_drop, W_output) + b_output
 
@@ -90,7 +90,8 @@ class DeepQNetwork():
         self.Q_ = tf.placeholder(tf.float32, [None], name='Observed_Action_Value')
         self.loss = tf.reduce_mean(tf.square(self.Q - self.Q_))
         self.learning_rate = tf.placeholder(tf.float32, name='Learning_Rate')
-        self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
+        self.train_step = tf.train.RMSPropOptimizer(
+            self.learning_rate, momentum=0.95, epsilon=0.01).minimize(self.loss)
 
     def eval_optimal_action(self, state):
         """Estimates the optimal action for the specified state.
@@ -123,12 +124,7 @@ class DeepQNetwork():
                                                 self.action: action,
                                                 self.keep_prob: 1})
 
-    def eval_loss(self, Q, Q_):
-        """Compares a predicted Q value with an observed Q value."""
-
-        return self.sess.run(self.loss, feed_dict={self.Q: Q, self.Q_: Q_})
-
-    def train(self, state, action, Q_, learning_rate=1e-6, dropout_prob=0.2):
+    def train(self, state, action, Q_, learning_rate, dropout_prob):
         """Learns by performing one step of gradient descent.
 
         Args:
@@ -136,7 +132,7 @@ class DeepQNetwork():
             action: An action. Can be batched into multiple actions.
             Q_: An observed action value.
             learning_rate: The speed with which the network learns from new examples.
-            dropout_prob: Likelihood of individual neurons from fully connected layers becoming
+            dropout_prob: Likelihood of individual neurons from the fully connected layer becoming
                 inactive.
         """
 

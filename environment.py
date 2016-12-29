@@ -4,11 +4,16 @@ Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforc
 (Mnih et al., 2013).
 """
 
-from collections import deque
 from skimage import color
 from skimage import transform
 
+import gym
 import numpy as np
+
+
+# Specifies which actions are enabled per known game. For unknown games, all actions are enabled.
+ACTION_SPACE = {'Pong-v0': [0, 2, 3],  # NONE, UP and DOWN.
+                'Breakout-v0': [1, 2, 3]}  # FIRE (respawn ball, otherwise NOOP), UP and DOWN.
 
 
 def _preprocess_observation(observation):
@@ -17,60 +22,58 @@ def _preprocess_observation(observation):
     smaller_image = transform.resize(color.rgb2gray(observation), (110, 84))
     square_image = smaller_image[17:110 - 9, :]
 
-    # Convert values from 64-bit floats to 32-bit floats.
-    return square_image.astype(np.float32)
-
-
-def _get_state(observations):
-    """Creates a state from the specified observations.
-
-    States are series of consecutive observations. Using more than one observation per state may
-    provide short-term memory for the learner. Great for games like Pong where the trajectory of the
-    ball can't be inferred from a single image.
-
-    Returns:
-        An 84x84xlen(observations) tensor with values from 0 to 1.
-    """
-
-    state = np.empty([84, 84, len(observations)], np.float32)
-
-    for i, observation in enumerate(observations):
-        state[:, :, i] = observation
-
-    return state
+    # Convert pixels from 64-bit floats (between 0 and 1) to 16-bit floats.
+    return square_image.astype(np.float16)
 
 
 class AtariWrapper:
     """Wraps over an Atari environment from OpenAI Gym and provides experience replay."""
 
-    def __init__(self,
-                 env,
-                 replay_memory_capacity=100000,
-                 observations_per_state=3,
-                 action_space=None):
+    def __init__(self, env_name, replay_memory_capacity, observations_per_state, action_space=None):
         """Creates the wrapper.
 
         Args:
-            env: An OpenAI Gym Atari environment.
+            env_name: Name of an OpenAI Gym Atari environment.
             replay_memory_capacity: Number of experiences remembered. Conceptually, an experience is
-                a (state, action, reward, next_state, done) tuple. During training, learners sample
-                the replay memory.
+                a (state, action, reward, next_state, done) tuple. The replay memory is sampled by
+                the agent during training.
             observations_per_state: Number of consecutive observations within a state. Provides some
                 short-term memory for the learner. Useful in games like Pong where the trajectory of
                 the ball can't be inferred from a single image.
-            action_space: Determines which actions are allowed. If 'None', all actions are allowed.
+            action_space: A list of possible actions. If 'action_space' is 'None' and no default
+                configuration exists for this environment, all actions will be allowed.
         """
 
-        self.env = env
+        self.env = gym.make(env_name)
         self.replay_memory_capacity = replay_memory_capacity
-        self.observations_per_state = observations_per_state
-        self.action_space = action_space if action_space else list(range(self.env.action_space.n))
+        self.state_length = observations_per_state
+        self.done = False
         self.state_space = [84, 84, observations_per_state]
-        self._initialize_replay_memory()
-        self.restart()
 
-    def restart(self):
-        """Restarts the game."""
+        if action_space:
+            self.action_space = list(action_space)
+        elif env_name in ACTION_SPACE:
+            self.action_space = ACTION_SPACE[env_name]
+        else:
+            self.action_space = list(range(self.env.action_space.n))
+
+        # Create replay memory. Arrays are used instead of double-ended queues for faster indexing.
+        self.num_exp = 0
+        self.actions = np.empty(replay_memory_capacity, np.uint8)
+        self.rewards = np.empty(replay_memory_capacity, np.int8)
+        self.ongoing = np.empty(replay_memory_capacity, np.bool)
+
+        # Used for computing both 'current' and 'next' states.
+        self.observations = np.empty([replay_memory_capacity + observations_per_state, 84, 84],
+                                     np.float16)
+
+        # Initialize the first state by performing random actions.
+        for i in range(observations_per_state):
+            observation, _, _, _ = self.env.step(self.sample_action())
+            self.observations[i] = _preprocess_observation(observation)
+
+    def reset(self):
+        """Resets the environment."""
 
         self.env.reset()
         self.done = False
@@ -82,12 +85,11 @@ class AtariWrapper:
             The reward.
 
         Raises:
-            Exception: If the game ended.
             ValueError: If the action is not valid.
         """
 
         if self.done:
-            raise Exception('Game finished.')
+            self.reset()
 
         if action not in self.action_space:
             raise ValueError('Action "{}" is invalid. Valid actions: {}.'.format(action,
@@ -95,8 +97,24 @@ class AtariWrapper:
 
         observation, reward, self.done, _ = self.env.step(action)
 
-        self.info.append((action, reward, self.done))
-        self.observations.append(_preprocess_observation(observation))
+        # Remember this experience.
+        self.actions[self.num_exp] = action
+        self.rewards[self.num_exp] = reward
+        self.ongoing[self.num_exp] = not self.done
+        self.observations[self.num_exp + self.state_length] = _preprocess_observation(observation)
+        self.num_exp += 1
+
+        if self.num_exp == self.replay_memory_capacity:
+            # Free up space by deleting half of the oldest experiences.
+            mid = int(self.num_exp / 2)
+            end = 2 * mid
+
+            self.num_exp = mid
+            self.actions[:mid] = self.actions[mid:end]
+            self.rewards[:mid] = self.rewards[mid:end]
+            self.ongoing[:mid] = self.ongoing[mid:end]
+            self.observations[:mid + self.state_length] = self.observations[mid:
+                                                                            end + self.state_length]
 
         return reward
 
@@ -111,30 +129,24 @@ class AtariWrapper:
         return np.random.choice(self.action_space)
 
     def sample_experiences(self, exp_count):
-        """Randomly samples experiences from the replay memory. May contain duplicates."""
+        """Randomly samples experiences from the replay memory. May contain duplicates.
 
-        indexes = np.random.choice(len(self.info), exp_count)
+        Args:
+            exp_count: Number of experiences to sample.
 
-        states = np.empty([exp_count, 84, 84, self.observations_per_state], np.float32)
-        actions = np.empty(exp_count, np.uint8)
-        rewards = np.empty(exp_count, np.float32)
-        next_states = np.empty([exp_count, 84, 84, self.observations_per_state], np.float32)
-        done = np.empty(exp_count, np.bool)
+        Returns:
+            A (states, actions, rewards, next_states, ongoing) tuple. The boolean array, 'ongoing',
+            determines whether the 'next_states' are terminal states.
+        """
 
-        for i, sampled_i in enumerate(indexes):
-            # Initial state = [sampled_i, sampled_i + observations_per_state].
-            # Next state = [sampled_i + 1, sampled_i + observations_per_state + 1].
-            # So final range (their union) is [sampled_i, sampled_i + observations_per_state + 1].
-            observation_i = range(sampled_i, sampled_i + self.observations_per_state + 1)
-            observations = [self.observations[j] for j in observation_i]
+        indexes = np.random.choice(self.num_exp, exp_count)
+        actions = self.actions[indexes]
+        rewards = self.rewards[indexes]
+        ongoing = self.ongoing[indexes]
+        states = np.array([self._get_state(i) for i in indexes])
+        next_states = np.array([self._get_state(i) for i in indexes + 1])
 
-            states[i] = _get_state(observations[:self.observations_per_state])
-            actions[i] = self.info[sampled_i][0]
-            rewards[i] = self.info[sampled_i][1]
-            next_states[i] = _get_state(observations[1:])
-            done[i] = self.info[sampled_i][2]
-
-        return states, actions, rewards, next_states, done
+        return states, actions, rewards, next_states, ongoing
 
     def get_state(self):
         """Gets the current state.
@@ -143,27 +155,25 @@ class AtariWrapper:
             An 84x84x(self.observations_per_state) tensor with values from 0 to 1.
         """
 
-        observations = [self.observations[i] for i in range(-self.observations_per_state, 0)]
-        current_state = _get_state(observations)
+        return self._get_state(-1)
 
-        return current_state
+    def _get_state(self, index):
+        """Gets the specified state. Supports negative indexing.
 
-    def _initialize_replay_memory(self):
-        """Clears the experience buffer then creates the initial experience by acting randomly."""
+        States are series of consecutive observations. Using more than one observation per state may
+        provide short-term memory for the learner. Great for games like Pong where the trajectory of
+        the ball can't be inferred from a single image.
 
-        self.observations = deque(maxlen=self.replay_memory_capacity + self.observations_per_state)
-        self.info = deque(maxlen=self.replay_memory_capacity)
+        Returns:
+            An 84x84x(observations_per_state) tensor with values from 0 to 1.
+        """
 
-        # Prepare the first state by performing random actions. States are represented by
-        # observations_per_state consecutive observations.
-        for i in range(self.observations_per_state):
-            observation, _, _, _ = self.env.step(self.sample_action())
-            self.observations.append(_preprocess_observation(observation))
+        state = np.empty([84, 84, self.state_length], np.float16)
 
-        # Prepare the next state by performing one more random action.
-        action = self.sample_action()
-        observation, reward, self.done, _ = self.env.step(action)
+        # Allow negative indexing by wrapping around.
+        index = index % self.num_exp
 
-        # Store the first experience.
-        self.info.append((action, reward, self.done))
-        self.observations.append(_preprocess_observation(observation))
+        for i in range(self.state_length):
+            state[..., i] = self.observations[index + i]
+
+        return state
