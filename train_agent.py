@@ -39,19 +39,19 @@ PARSER.add_argument('--num_epochs',
                     metavar='EPOCHS',
                     help='number of epochs to train for',
                     type=int,
-                    default=200)
+                    default=300)
 
 PARSER.add_argument('--epoch_length',
                     metavar='TIME STEPS',
                     help='number of time steps per epoch',
                     type=int,
-                    default=100000)
+                    default=200000)
 
 PARSER.add_argument('--test_length',
                     metavar='TIME STEPS',
                     help="number of time steps per test",
                     type=int,
-                    default=100000)
+                    default=75000)
 
 PARSER.add_argument('--start_epsilon',
                     metavar='EPSILON',
@@ -75,13 +75,13 @@ PARSER.add_argument('--replay_memory_capacity',
                     metavar='EXPERIENCES',
                     help='number of most recent experiences remembered',
                     type=int,
-                    default=200000)
+                    default=1000000)
 
 PARSER.add_argument('--wait_before_training',
                     metavar='TIME STEPS',
                     help='number of experiences to accumulate before training starts',
                     type=int,
-                    default=50000)
+                    default=100000)
 
 PARSER.add_argument('--train_interval',
                     metavar='TIME STEPS',
@@ -93,7 +93,7 @@ PARSER.add_argument('--batch_size',
                     metavar='EXPERIENCES',
                     help='number of experiences sampled and trained on at once',
                     type=int,
-                    default=256)
+                    default=32)
 
 PARSER.add_argument('--learning_rate',
                     metavar='LAMBDA',
@@ -105,7 +105,7 @@ PARSER.add_argument('--dropout_prob',
                     metavar='DROPOUT',
                     help='likelihood of neurons from fully connected layers becoming inactive',
                     type=float,
-                    default=0.7)
+                    default=0.2)
 
 PARSER.add_argument('--discount',
                     metavar='GAMMA',
@@ -117,13 +117,19 @@ PARSER.add_argument('--target_network_update_factor',
                     metavar='TAU',
                     help='rate at which target Q-network values shift toward real Q-network values',
                     type=float,
-                    default=0.00005)
+                    default=0.0001)
 
 PARSER.add_argument('--observations_per_state',
                     metavar='FRAMES',
                     help='number of consecutive frames within a state',
                     type=int,
                     default=4)
+
+PARSER.add_argument('--gpu_memory_alloc',
+                    metavar='PERCENTAGE',
+                    help='determines how much GPU memory to allocate for the neural network',
+                    type=float,
+                    default=1)
 
 
 def eval_model(env, player, test_length, save_dir):
@@ -205,8 +211,10 @@ def main(args):
                                    args.replay_memory_capacity,
                                    args.observations_per_state,
                                    args.action_space)
+    config = tf.ConfigProto()
+    config.gpu_options.per_process_gpu_memory_fraction = args.gpu_memory_alloc
 
-    with tf.Session() as sess:
+    with tf.Session(config=config) as sess:
         player = agent.Agent(sess,
                              env,
                              args.start_epsilon,

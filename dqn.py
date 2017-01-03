@@ -64,8 +64,8 @@ class DeepQNetwork():
         h_flat = tf.reshape(h_conv3, [-1, num_params])
 
         with tf.name_scope('Fully_Connected_Layer'):
-            W_fc = _create_weights([num_params, 2048])
-            b_fc = _create_bias([2048])
+            W_fc = _create_weights([num_params, 512])
+            b_fc = _create_bias([512])
             h_fc = tf.nn.relu(tf.matmul(h_flat, W_fc) + b_fc)
 
         # Implement dropout.
@@ -73,7 +73,7 @@ class DeepQNetwork():
         h_fc_drop = tf.nn.dropout(h_fc, self.keep_prob)
 
         with tf.name_scope('Output'):
-            W_output = _create_weights([2048, num_actions])
+            W_output = _create_weights([512, num_actions])
             b_output = _create_bias([num_actions])
             h_output = tf.matmul(h_fc_drop, W_output) + b_output
 
@@ -90,8 +90,7 @@ class DeepQNetwork():
         self.Q_ = tf.placeholder(tf.float32, [None], name='Observed_Action_Value')
         self.loss = tf.reduce_mean(tf.square(self.Q - self.Q_))
         self.learning_rate = tf.placeholder(tf.float32, name='Learning_Rate')
-        self.train_step = tf.train.RMSPropOptimizer(
-            self.learning_rate, momentum=0.95, epsilon=0.01).minimize(self.loss)
+        self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
 
     def eval_optimal_action(self, state):
         """Estimates the optimal action for the specified state.
