@@ -11,6 +11,7 @@ import datetime
 import environment
 import numpy as np
 import os
+import random
 import tensorflow as tf
 
 
@@ -52,6 +53,12 @@ PARSER.add_argument('--test_length',
                     help="number of time steps per test",
                     type=int,
                     default=75000)
+
+PARSER.add_argument('--test_epsilon',
+                    metavar='EPSILON',
+                    help='fixed exploration chance used when testing the agent',
+                    type=float,
+                    default=0)
 
 PARSER.add_argument('--start_epsilon',
                     metavar='EPSILON',
@@ -132,7 +139,7 @@ PARSER.add_argument('--gpu_memory_alloc',
                     default=1)
 
 
-def eval_model(env, player, test_length, save_dir):
+def eval_model(env, player, test_length, save_dir, epsilon):
     """Evaluates the performance of the specified agent. Writes results in a CSV file."""
 
     total_reward = 0
@@ -155,7 +162,13 @@ def eval_model(env, player, test_length, save_dir):
         while time_step + local_time_step < test_length and not env.done:
             local_time_step += 1
             state = env.get_state()
-            action = player.get_action(state)
+
+            # Occasionally try a random action (explore).
+            if random.random() < epsilon:
+                action = env.sample_action()
+            else:
+                action = player.get_action(state)
+
             Q = player.dqn.eval_optimal_action_value(np.expand_dims(state, axis=0))[0]
 
             # Record statistics.
@@ -251,7 +264,7 @@ def main(args):
                 saver.save(sess, save_path)
                 print('[{}] Saved model to "{}".'.format(datetime.datetime.now(), save_path))
 
-            eval_model(env, player, args.test_length, args.save_dir)
+            eval_model(env, player, args.test_length, args.save_dir, args.test_epsilon)
 
 
 if __name__ == '__main__':
