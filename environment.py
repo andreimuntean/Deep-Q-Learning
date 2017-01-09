@@ -11,19 +11,9 @@ import gym
 import numpy as np
 
 
-# Specifies which actions are enabled per known game. For unknown games, all actions are enabled.
+# Specifies restricted action spaces. For games not in this dictionary, all actions are enabled.
 ACTION_SPACE = {'Pong-v0': [0, 2, 3],  # NONE, UP and DOWN.
                 'Breakout-v0': [1, 2, 3]}  # FIRE (respawn ball, otherwise NOOP), UP and DOWN.
-
-
-def _preprocess_observation(observation):
-    """Deletes colors, shrinks and crops the 210x160x3 observation into an 84x84 grayscale image."""
-
-    smaller_image = transform.resize(color.rgb2gray(observation), (110, 84))
-    square_image = smaller_image[17:110 - 9, :]
-
-    # Convert pixels from 64-bit floats (between 0 and 1) to 16-bit floats.
-    return square_image.astype(np.float16)
 
 
 class AtariWrapper:
@@ -57,6 +47,9 @@ class AtariWrapper:
         else:
             self.action_space = list(range(self.env.action_space.n))
 
+        # Used when preprocessing observations.
+        self.previous_frame = self.env.observation_space.low
+
         # Create replay memory. Arrays are used instead of double-ended queues for faster indexing.
         self.num_exp = 0
         self.actions = np.empty(replay_memory_capacity, np.uint8)
@@ -70,8 +63,9 @@ class AtariWrapper:
         # Initialize the first state by performing random actions.
         for i in range(observations_per_state):
             observation, _, _, _ = self.env.step(self.sample_action())
-            self.observations[i] = _preprocess_observation(observation)
-        
+            self.observations[i] = self._preprocess(observation)
+            self.previous_frame = observation
+
         # Initialize the first experience by performing one more random action.
         self.step(self.sample_action())
 
@@ -104,7 +98,8 @@ class AtariWrapper:
         self.actions[self.num_exp] = action
         self.rewards[self.num_exp] = reward
         self.ongoing[self.num_exp] = not self.done
-        self.observations[self.num_exp + self.state_length] = _preprocess_observation(observation)
+        self.observations[self.num_exp + self.state_length] = self._preprocess(observation)
+        self.previous_frame = observation
         self.num_exp += 1
 
         if self.num_exp == self.replay_memory_capacity:
@@ -155,7 +150,7 @@ class AtariWrapper:
         """Gets the current state.
 
         Returns:
-            An 84x84x(self.observations_per_state) tensor with values from 0 to 1.
+            An 84x84x(self.observations_per_state) tensor with real values between 0 and 1.
         """
 
         return self._get_state(-1)
@@ -168,7 +163,7 @@ class AtariWrapper:
         the ball can't be inferred from a single image.
 
         Returns:
-            An 84x84x(observations_per_state) tensor with values from 0 to 1.
+            An 84x84x(observations_per_state) tensor with real values between 0 and 1.
         """
 
         state = np.empty([84, 84, self.state_length], np.float16)
@@ -180,3 +175,19 @@ class AtariWrapper:
             state[..., i] = self.observations[index + i]
 
         return state
+
+    def _preprocess(self, observation):
+        """Transforms the specified observation into an 84x84 grayscale image.
+
+        Returns:
+            An 84x84 tensor with real values between 0 and 1.
+        """
+
+        # Create an intermediary frame by selecting the highest RGB values between this observation
+        # and the previous one.
+        intermediary_frame = np.maximum(self.previous_frame, observation)
+        grayscale_image = color.rgb2gray(intermediary_frame)
+        resized_image = transform.resize(grayscale_image, [84, 84])
+
+        # Convert pixels from 64-bit floats (between 0 and 1) to 16-bit floats.
+        return resized_image.astype(np.float16)
