@@ -139,8 +139,16 @@ PARSER.add_argument('--gpu_memory_alloc',
                     default=1)
 
 
-def eval_model(env, player, test_length, save_dir, epsilon):
-    """Evaluates the performance of the specified agent. Writes results in a CSV file."""
+def eval_model(player, env, test_length, epsilon, save_path):
+    """Evaluates the performance of the specified agent. Writes results in a CSV file.
+
+    Args:
+        player: An agent.
+        env: Environment in which the agent is tested.
+        test_length: Number of time steps to test the agent for.
+        epsilon: Likelihood of the agent performing a random action.
+        save_path: CSV file where results will be saved.
+    """
 
     total_reward = 0
     total_Q = 0
@@ -191,8 +199,6 @@ def eval_model(env, player, test_length, save_dir, epsilon):
         max_Q = max(max_Q, local_max_Q)
 
     # Save results.
-    save_path = os.path.join(save_dir, 'test_results.csv')
-
     with open(save_path, 'a') as csvfile:
         writer = csv.writer(csvfile)
 
@@ -214,8 +220,6 @@ def eval_model(env, player, test_length, save_dir, epsilon):
             # The agent got stuck during the first game.
             writer.writerow([0, 0, 0, 0, 0, 0, 0])
 
-    print('[{}] Wrote test results to "{}".'.format(datetime.datetime.now(), save_path))
-
 
 def main(args):
     """Trains an agent to play Atari games."""
@@ -224,6 +228,10 @@ def main(args):
                                    args.replay_memory_capacity,
                                    args.observations_per_state,
                                    args.action_space)
+    test_env = environment.AtariWrapper(args.env_name,
+                                        100 * args.observations_per_state,
+                                        args.observations_per_state,
+                                        args.action_space)
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = args.gpu_memory_alloc
 
@@ -255,16 +263,17 @@ def main(args):
             for _ in range(args.epoch_length):
                 player.train()
 
-            if args.save_dir:
-                if not os.path.exists(args.save_dir):
-                    os.makedirs(args.save_dir)
+            if not os.path.exists(args.save_dir):
+                os.makedirs(args.save_dir)
 
-                file_name = '{}.{:05d}-of-{:05d}'.format(args.env_name, epoch_i, args.num_epochs)
-                save_path = os.path.join(args.save_dir, file_name)
-                saver.save(sess, save_path)
-                print('[{}] Saved model to "{}".'.format(datetime.datetime.now(), save_path))
+            file_name = '{}.{:05d}-of-{:05d}'.format(args.env_name, epoch_i, args.num_epochs)
+            model_path = os.path.join(args.save_dir, file_name)
+            saver.save(sess, model_path)
+            print('[{}] Saved model to "{}".'.format(datetime.datetime.now(), model_path))
 
-            eval_model(env, player, args.test_length, args.save_dir, args.test_epsilon)
+            results_path = os.path.join(args.save_dir, 'test_results.csv')
+            eval_model(player, test_env, args.test_length, args.test_epsilon, results_path)
+            print('[{}] Saved test results to "{}".'.format(datetime.datetime.now(), results_path))
 
 
 if __name__ == '__main__':
