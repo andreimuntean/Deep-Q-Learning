@@ -31,10 +31,10 @@ class Agent():
             sess: The associated TensorFlow session.
             env: An AtariWrapper object (see 'environment.py') that wraps over an OpenAI Gym Atari
                 environment.
-            start_epsilon: Initial value for epsilon (exploration chance).
-            end_epsilon: Final value for epsilon (exploration chance).
-            anneal_duration: Number of episodes needed to decrease epsilon from start_epsilon to
-                end_epsilon.
+            start_epsilon: Initial value for epsilon (exploration chance) used when training.
+            end_epsilon: Final value for epsilon (exploration chance) used when training.
+            anneal_duration: Number of time steps needed to decrease epsilon from start_epsilon to
+                end_epsilon when training.
             train_interval: Number of experiences to accumulate before another round of training
                 starts.
             batch_size: Number of experiences sampled and trained on at once.
