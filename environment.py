@@ -71,6 +71,9 @@ class AtariWrapper:
         for i in range(observations_per_state):
             observation, _, _, _ = self.env.step(self.sample_action())
             self.observations[i] = _preprocess_observation(observation)
+        
+        # Initialize the first experience by performing one more random action.
+        self.step(self.sample_action())
 
     def reset(self):
         """Resets the environment."""
