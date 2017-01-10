@@ -183,8 +183,9 @@ class AtariWrapper:
             An 84x84 tensor with real values between 0 and 1.
         """
 
-        # Create an intermediary frame by selecting the highest RGB values between this observation
-        # and the previous one.
+        # The environment may contain objects that flicker, becoming invisible to the agent every
+        # second frame. To combat this, an intermediary frame is created by selecting the highest
+        # RGB values between the current observation and the previous one.
         intermediary_frame = np.maximum(self.previous_frame, observation)
         grayscale_image = color.rgb2gray(intermediary_frame)
         resized_image = transform.resize(grayscale_image, [84, 84])

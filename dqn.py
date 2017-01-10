@@ -9,15 +9,25 @@ import math
 import tensorflow as tf
 
 
-def _create_weights(shape):
-    # Initialize parameters with slight noise to avoid symmetry.
-    value = tf.truncated_normal(shape, stddev=0.05)
+def _create_fc_weights(shape):
+    # Use Xavier initialization.
+    minval = -math.sqrt(6.0 / (shape[0] + shape[1]))
+    maxval = math.sqrt(6.0 / (shape[0] + shape[1]))
+    value = tf.random_uniform(shape, minval, maxval)
+    return tf.Variable(value, name='Weights')
+
+
+def _create_conv2d_weights(shape):
+    # Use Xavier initialization.
+    minval = -math.sqrt(6.0 / (shape[0] * shape[1] * shape[2] + shape[3]))
+    maxval = math.sqrt(6.0 / (shape[0] * shape[1] * shape[2] + shape[3]))
+    value = tf.random_uniform(shape, minval, maxval)
     return tf.Variable(value, name='Weights')
 
 
 def _create_bias(shape):
     # Initialize with a slight positive bias to prevent ReLU neurons from dying.
-    value = tf.constant(0.05, shape=shape)
+    value = tf.constant(0.1, shape=shape)
     return tf.Variable(value, name='Bias')
 
 
@@ -43,17 +53,17 @@ class DeepQNetwork():
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
 
         with tf.name_scope('Convolutional_Layer_1'):
-            W_conv1 = _create_weights([8, 8, depth, 32])
+            W_conv1 = _create_conv2d_weights([8, 8, depth, 32])
             b_conv1 = _create_bias([32])
             h_conv1 = tf.nn.relu(_create_conv2d(self.x, W_conv1, stride=4) + b_conv1)
 
         with tf.name_scope('Convolutional_Layer_2'):
-            W_conv2 = _create_weights([4, 4, 32, 64])
+            W_conv2 = _create_conv2d_weights([4, 4, 32, 64])
             b_conv2 = _create_bias([64])
             h_conv2 = tf.nn.relu(_create_conv2d(h_conv1, W_conv2, stride=2) + b_conv2)
 
         with tf.name_scope('Convolutional_Layer_3'):
-            W_conv3 = _create_weights([3, 3, 64, 64])
+            W_conv3 = _create_conv2d_weights([3, 3, 64, 64])
             b_conv3 = _create_bias([64])
             h_conv3 = tf.nn.relu(_create_conv2d(h_conv2, W_conv3, stride=1) + b_conv3)
 
@@ -64,7 +74,7 @@ class DeepQNetwork():
         h_flat = tf.reshape(h_conv3, [-1, num_params])
 
         with tf.name_scope('Fully_Connected_Layer'):
-            W_fc = _create_weights([num_params, 512])
+            W_fc = _create_fc_weights([num_params, 512])
             b_fc = _create_bias([512])
             h_fc = tf.nn.relu(tf.matmul(h_flat, W_fc) + b_fc)
 
@@ -73,7 +83,7 @@ class DeepQNetwork():
         h_fc_drop = tf.nn.dropout(h_fc, self.keep_prob)
 
         with tf.name_scope('Output'):
-            W_output = _create_weights([512, num_actions])
+            W_output = _create_fc_weights([512, num_actions])
             b_output = _create_bias([num_actions])
             h_output = tf.matmul(h_fc_drop, W_output) + b_output
 
