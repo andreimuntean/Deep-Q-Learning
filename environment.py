@@ -16,6 +16,20 @@ ACTION_SPACE = {'Pong-v0': [0, 2, 3],  # NONE, UP and DOWN.
                 'Breakout-v0': [1, 2, 3]}  # FIRE (respawn ball, otherwise NOOP), UP and DOWN.
 
 
+def _preprocess_observation(observation):
+    """Transforms the specified observation into an 84x84 grayscale image.
+
+    Returns:
+        An 84x84 tensor with real values between 0 and 1.
+    """
+
+    grayscale_image = color.rgb2gray(observation)
+    resized_image = transform.resize(grayscale_image, [84, 84])
+
+    # Convert pixels from 64-bit floats (between 0 and 1) to 16-bit floats.
+    return resized_image.astype(np.float16)
+
+
 class AtariWrapper:
     """Wraps over an Atari environment from OpenAI Gym and provides experience replay."""
 
@@ -47,9 +61,6 @@ class AtariWrapper:
         else:
             self.action_space = list(range(self.env.action_space.n))
 
-        # Used when preprocessing observations.
-        self.previous_frame = self.env.observation_space.low
-
         # Create replay memory. Arrays are used instead of double-ended queues for faster indexing.
         self.num_exp = 0
         self.actions = np.empty(replay_memory_capacity, np.uint8)
@@ -63,7 +74,7 @@ class AtariWrapper:
         # Initialize the first state by performing random actions.
         for i in range(observations_per_state):
             observation, _, _, _ = self.env.step(self.sample_action())
-            self.observations[i] = self._preprocess(observation)
+            self.observations[i] = _preprocess_observation(observation)
             self.previous_frame = observation
 
         # Initialize the first experience by performing one more random action.
@@ -98,7 +109,7 @@ class AtariWrapper:
         self.actions[self.num_exp] = action
         self.rewards[self.num_exp] = reward
         self.ongoing[self.num_exp] = not self.done
-        self.observations[self.num_exp + self.state_length] = self._preprocess(observation)
+        self.observations[self.num_exp + self.state_length] = _preprocess_observation(observation)
         self.previous_frame = observation
         self.num_exp += 1
 
@@ -176,19 +187,3 @@ class AtariWrapper:
 
         return state
 
-    def _preprocess(self, observation):
-        """Transforms the specified observation into an 84x84 grayscale image.
-
-        Returns:
-            An 84x84 tensor with real values between 0 and 1.
-        """
-
-        # The environment may contain objects that flicker, becoming invisible to the agent every
-        # second frame. To combat this, an intermediary frame is created by selecting the highest
-        # RGB values between the current observation and the previous one.
-        intermediary_frame = np.maximum(self.previous_frame, observation)
-        grayscale_image = color.rgb2gray(intermediary_frame)
-        resized_image = transform.resize(grayscale_image, [84, 84])
-
-        # Convert pixels from 64-bit floats (between 0 and 1) to 16-bit floats.
-        return resized_image.astype(np.float16)
