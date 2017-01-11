@@ -106,7 +106,7 @@ PARSER.add_argument('--learning_rate',
                     metavar='LAMBDA',
                     help='rate at which the network learns from new examples',
                     type=float,
-                    default=0.00025)
+                    default=0.0002)
 
 PARSER.add_argument('--dropout_prob',
                     metavar='DROPOUT',
@@ -136,7 +136,7 @@ PARSER.add_argument('--gpu_memory_alloc',
                     metavar='PERCENTAGE',
                     help='determines how much GPU memory to allocate for the neural network',
                     type=float,
-                    default=1)
+                    default=0.2)
 
 
 def eval_model(player, env, test_length, epsilon, save_path):
@@ -151,6 +151,8 @@ def eval_model(player, env, test_length, epsilon, save_path):
     """
 
     total_reward = 0
+    min_reward = 1e7
+    max_reward = -1e7
     total_Q = 0
     summed_min_Qs = 0
     min_Q = 1e7
@@ -192,6 +194,8 @@ def eval_model(player, env, test_length, epsilon, save_path):
         num_games_finished += 1
         time_step += local_time_step
         total_reward += local_total_reward
+        min_reward = min(min_reward, local_total_reward)
+        max_reward = max(max_reward, local_total_reward)
         total_Q += local_total_Q
         summed_min_Qs += local_min_Q
         summed_max_Qs += local_max_Q
@@ -211,6 +215,8 @@ def eval_model(player, env, test_length, epsilon, save_path):
 
             writer.writerow([num_games_finished,
                              avg_reward,
+                             min_reward,
+                             max_reward,
                              avg_Q,
                              avg_min_Q,
                              min_Q,
@@ -218,7 +224,7 @@ def eval_model(player, env, test_length, epsilon, save_path):
                              max_Q])
         else:
             # The agent got stuck during the first game.
-            writer.writerow([0, 0, 0, 0, 0, 0, 0])
+            writer.writerow([0, 0, 0, 0, 0, 0, 0, 0, 0])
 
 
 def main(args):
@@ -259,6 +265,9 @@ def main(args):
         for _ in range(args.wait_before_training):
             env.step(env.sample_action())
 
+        print('[{}] Accumulated {} experiences.'.format(
+            datetime.datetime.now(), args.wait_before_training))
+
         for epoch_i in range(args.num_epochs):
             for _ in range(args.epoch_length):
                 player.train()
@@ -278,3 +287,4 @@ def main(args):
 
 if __name__ == '__main__':
     main(PARSER.parse_args())
+
