@@ -130,7 +130,7 @@ PARSER.add_argument('--target_network_update_factor',
                     metavar='TAU',
                     help='rate at which target Q-network values shift toward real Q-network values',
                     type=float,
-                    default=0.00015)
+                    default=0.001)
 
 PARSER.add_argument('--observations_per_state',
                     metavar='FRAMES',
