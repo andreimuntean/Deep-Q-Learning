@@ -294,4 +294,3 @@ def main(args):
 
 if __name__ == '__main__':
     main(PARSER.parse_args())
-

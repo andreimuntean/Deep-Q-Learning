@@ -186,4 +186,3 @@ class AtariWrapper:
             state[..., i] = self.observations[index + i]
 
         return state
-

@@ -63,7 +63,7 @@ def _get_huber_loss(x, max_gradient):
 
 
 class DeepQNetwork():
-    def __init__(self, sess, num_actions, state_shape, max_gradient):
+    def __init__(self, sess, num_actions, state_shape):
         """Creates a deep Q network.
 
         Args:
@@ -187,4 +187,3 @@ class DeepQNetwork():
                                                   self.learning_rate: learning_rate,
                                                   self.keep_prob: 1 - dropout_prob,
                                                   self.max_gradient: max_gradient})
-
