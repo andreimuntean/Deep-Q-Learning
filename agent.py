@@ -23,6 +23,7 @@ class Agent():
                  batch_size,
                  learning_rate,
                  dropout_prob,
+                 max_gradient,
                  discount,
                  target_network_update_factor):
         """An agent that learns to play Atari games using deep Q-learning.
@@ -40,6 +41,8 @@ class Agent():
             batch_size: Number of experiences sampled and trained on at once.
             learning_rate: The speed with which the network learns from new examples.
             dropout_prob: Likelihood of neurons from fully connected layers becoming inactive.
+            max_gradient: Maximum value allowed for gradients during backpropagation. Gradients that
+                would otherwise surpass this value are reduced to it.
             discount: Discount factor for future rewards.
             target_network_update_factor: Rate at which target Q-network values shift toward actual
                 Q-network values. This delayed target network improves training stability.
@@ -55,6 +58,7 @@ class Agent():
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.dropout_prob = dropout_prob
+        self.max_gradient = max_gradient
         self.discount = discount
         self.time_step = 0
         self.episodes_played = 0
@@ -102,10 +106,16 @@ class Agent():
             #                    { r, if next state is terminal
             # Q(state, action) = {
             #                    { r + discount * max(Q(next state, <any action>)), otherwise
-            Q_ = rewards + ongoing * self.discount * self.target_dqn.eval_optimal_action_value(next_states)
+            Q_ = rewards + ongoing * self.discount * self.target_dqn.eval_Q(
+                next_states, self.dqn.eval_optimal_action(next_states))
 
             # Estimate action values, measure errors and update weights.
-            self.dqn.train(states, actions_i, Q_, self.learning_rate, self.dropout_prob)
+            self.dqn.train(states,
+                           actions_i,
+                           Q_,
+                           self.learning_rate,
+                           self.dropout_prob,
+                           self.max_gradient)
 
             # Shift target Q-network values toward actual Q-network values.
             self.sess.run(self.update_target_dqn)
@@ -133,3 +143,4 @@ class Agent():
                    * (self.start_epsilon - self.end_epsilon) / self.anneal_duration)
 
         return max(epsilon, self.end_epsilon)
+

@@ -70,13 +70,13 @@ PARSER.add_argument('--end_epsilon',
                     metavar='EPSILON',
                     help='final value for epsilon (exploration chance)',
                     type=float,
-                    default=0.1)
+                    default=0.05)
 
 PARSER.add_argument('--anneal_duration',
                     metavar='TIME STEPS',
                     help='number of time steps to anneal epsilon from start_epsilon to end_epsilon',
                     type=int,
-                    default=1000000)
+                    default=2000000)
 
 PARSER.add_argument('--replay_memory_capacity',
                     metavar='EXPERIENCES',
@@ -114,6 +114,12 @@ PARSER.add_argument('--dropout_prob',
                     type=float,
                     default=0.2)
 
+PARSER.add_argument('--max_gradient',
+                    metavar='DELTA',
+                    help='maximum value allowed for gradients during backpropagation',
+                    type=float,
+                    default=10)
+
 PARSER.add_argument('--discount',
                     metavar='GAMMA',
                     help='discount factor for future rewards',
@@ -124,7 +130,7 @@ PARSER.add_argument('--target_network_update_factor',
                     metavar='TAU',
                     help='rate at which target Q-network values shift toward real Q-network values',
                     type=float,
-                    default=0.0005)
+                    default=0.00015)
 
 PARSER.add_argument('--observations_per_state',
                     metavar='FRAMES',
@@ -251,6 +257,7 @@ def main(args):
                              args.batch_size,
                              args.learning_rate,
                              args.dropout_prob,
+                             args.max_gradient,
                              args.discount,
                              args.target_network_update_factor)
 

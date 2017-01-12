@@ -47,8 +47,23 @@ def _create_fc_layer(x, shape, activation_fn=None):
     return activation_fn(tf.matmul(x, W) + b)
 
 
+def _get_huber_loss(x, max_gradient):
+    """Computes the Huber loss, which restricts gradients from exceeding the specified value.
+
+    Args:
+        x: A tensor.
+        max_gradient: Value at which the gradient is clipped.
+    """
+
+    loss = tf.select(tf.abs(x) < max_gradient,
+                     0.5 * tf.square(x),
+                     max_gradient * (tf.abs(x) - 0.5 * max_gradient))
+
+    return tf.reduce_mean(loss)
+
+
 class DeepQNetwork():
-    def __init__(self, sess, num_actions, state_shape):
+    def __init__(self, sess, num_actions, state_shape, max_gradient):
         """Creates a deep Q network.
 
         Args:
@@ -65,13 +80,13 @@ class DeepQNetwork():
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
 
         with tf.name_scope('Convolutional_Layer_1'):
-            h_conv1 = _create_conv2d_layer(self.x, [8, 8, depth, 32], 4, tf.nn.relu)
+            h_conv1 = _create_conv2d_layer(self.x, [8, 8, depth, 32], 4, tf.nn.elu)
 
         with tf.name_scope('Convolutional_Layer_2'):
-            h_conv2 = _create_conv2d_layer(h_conv1, [4, 4, 32, 64], 2, tf.nn.relu)
+            h_conv2 = _create_conv2d_layer(h_conv1, [4, 4, 32, 64], 2, tf.nn.elu)
 
         with tf.name_scope('Convolutional_Layer_3'):
-            h_conv3 = _create_conv2d_layer(h_conv2, [3, 3, 64, 64], 1, tf.nn.relu)
+            h_conv3 = _create_conv2d_layer(h_conv2, [3, 3, 64, 64], 1, tf.nn.elu)
 
         # Flatten the output to feed it into fully connected layers.
         post_conv_height = math.ceil((math.ceil((height - 7) / 4) - 3) / 2) - 2
@@ -84,12 +99,12 @@ class DeepQNetwork():
         self.keep_prob = tf.placeholder(tf.float32, name='Keep_Prob')
 
         with tf.name_scope('Advantage_Stream'):
-            h_advantage_fc = _create_fc_layer(h_flat, [num_params, 512], tf.nn.relu)
+            h_advantage_fc = _create_fc_layer(h_flat, [num_params, 512], tf.nn.elu)
             h_advantage_drop = tf.nn.dropout(h_advantage_fc, self.keep_prob)
             advantage = _create_fc_layer(h_advantage_drop, [512, num_actions])
 
         with tf.name_scope('State_Value_Stream'):
-            h_state_value_fc = _create_fc_layer(h_flat, [num_params, 512], tf.nn.relu)
+            h_state_value_fc = _create_fc_layer(h_flat, [num_params, 512], tf.nn.elu)
             h_state_value_drop = tf.nn.dropout(h_state_value_fc, self.keep_prob)
             state_value = _create_fc_layer(h_state_value_drop, [512, 1])
 
@@ -109,7 +124,9 @@ class DeepQNetwork():
         # Compare with the observed action value.
         self.observed_action_value = tf.placeholder(
             tf.float32, [None], name='Observed_Action_Value')
-        loss = tf.reduce_mean(tf.square(self.estimated_action_value - self.observed_action_value))
+        self.max_gradient = tf.placeholder(tf.float32, name='Max_Gradient')
+        loss = _get_huber_loss(self.estimated_action_value - self.observed_action_value,
+                               self.max_gradient)
         self.learning_rate = tf.placeholder(tf.float32, name='Learning_Rate')
         self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(loss)
 
@@ -144,7 +161,13 @@ class DeepQNetwork():
                                                                      self.action: action,
                                                                      self.keep_prob: 1})
 
-    def train(self, state, action, observed_action_value, learning_rate, dropout_prob):
+    def train(self,
+              state,
+              action,
+              observed_action_value,
+              learning_rate,
+              dropout_prob,
+              max_gradient):
         """Learns by performing one step of gradient descent.
 
         Args:
@@ -154,11 +177,14 @@ class DeepQNetwork():
             learning_rate: The speed with which the network learns from new examples.
             dropout_prob: Likelihood of individual neurons from the fully connected layer becoming
                 inactive.
+            max_gradient: Maximum value allowed for gradients during backpropagation. Gradients that
+                would otherwise surpass this value are reduced to it.
         """
 
         self.sess.run(self.train_step, feed_dict={self.x: state,
                                                   self.action: action,
                                                   self.observed_action_value: observed_action_value,
                                                   self.learning_rate: learning_rate,
-                                                  self.keep_prob: 1 - dropout_prob})
+                                                  self.keep_prob: 1 - dropout_prob,
+                                                  self.max_gradient: max_gradient})
 
