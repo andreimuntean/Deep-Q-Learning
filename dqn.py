@@ -1,4 +1,4 @@
-"""Defines a deep Q network architecture.
+"""Defines a deep Q-network architecture.
 
 Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforcement Learning'
 (Mnih et al., 2013) and 'Human-level control through deep reinforcement learning' (Mnih et al.,
@@ -24,17 +24,18 @@ def _create_weights(shape):
     return tf.Variable(value, name='Weights')
 
 
-def _create_conv2d_layer(x, shape, stride, activation_fn):
+def _convolutional_layer(x, shape, stride, activation_fn):
     if len(shape) != 4:
         raise ValueError('Shape "{}" is invalid. Must have length 4.'.format(shape))
 
     W = _create_weights(shape)
     b = _create_bias([shape[3]])
+    conv = tf.nn.conv2d(x, W, [1, stride, stride, 1], 'VALID')
 
-    return activation_fn(tf.nn.conv2d(x, W, [1, stride, stride, 1], 'VALID') + b)
+    return activation_fn(tf.nn.bias_add(conv, b))
 
 
-def _create_fc_layer(x, shape, activation_fn=None):
+def _fully_connected_layer(x, shape, activation_fn=None):
     if len(shape) != 2:
         raise ValueError('Shape "{}" is invalid. Must have length 2.'.format(shape))
 
@@ -42,12 +43,12 @@ def _create_fc_layer(x, shape, activation_fn=None):
     b = _create_bias([shape[1]])
 
     if activation_fn is None:
-        return tf.matmul(x, W) + b
+        return tf.nn.bias_add(tf.matmul(x, W), b)
 
-    return activation_fn(tf.matmul(x, W) + b)
+    return activation_fn(tf.nn.bias_add(tf.matmul(x, W), b))
 
 
-def _get_huber_loss(x, max_gradient):
+def _huber_loss(x, max_gradient):
     """Computes the Huber loss, which restricts gradients from exceeding the specified value.
 
     Args:
@@ -74,19 +75,17 @@ class DeepQNetwork():
         """
 
         self.sess = sess
-        width = state_shape[0]
-        height = state_shape[1]
-        depth = state_shape[2]
+        width, height, depth = state_shape
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
 
         with tf.name_scope('Convolutional_Layer_1'):
-            h_conv1 = _create_conv2d_layer(self.x, [8, 8, depth, 32], 4, tf.nn.elu)
+            h_conv1 = _convolutional_layer(self.x, [8, 8, depth, 32], 4, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_2'):
-            h_conv2 = _create_conv2d_layer(h_conv1, [4, 4, 32, 64], 2, tf.nn.elu)
+            h_conv2 = _convolutional_layer(h_conv1, [4, 4, 32, 64], 2, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_3'):
-            h_conv3 = _create_conv2d_layer(h_conv2, [3, 3, 64, 64], 1, tf.nn.elu)
+            h_conv3 = _convolutional_layer(h_conv2, [3, 3, 64, 64], 1, tf.nn.relu)
 
         # Flatten the output to feed it into fully connected layers.
         post_conv_height = math.ceil((math.ceil((height - 7) / 4) - 3) / 2) - 2
@@ -99,14 +98,14 @@ class DeepQNetwork():
         self.keep_prob = tf.placeholder(tf.float32, name='Keep_Prob')
 
         with tf.name_scope('Advantage_Stream'):
-            h_advantage_fc = _create_fc_layer(h_flat, [num_params, 512], tf.nn.elu)
+            h_advantage_fc = _fully_connected_layer(h_flat, [num_params, 512], tf.nn.relu)
             h_advantage_drop = tf.nn.dropout(h_advantage_fc, self.keep_prob)
-            advantage = _create_fc_layer(h_advantage_drop, [512, num_actions])
+            advantage = _fully_connected_layer(h_advantage_drop, [512, num_actions])
 
         with tf.name_scope('State_Value_Stream'):
-            h_state_value_fc = _create_fc_layer(h_flat, [num_params, 512], tf.nn.elu)
+            h_state_value_fc = _fully_connected_layer(h_flat, [num_params, 512], tf.nn.relu)
             h_state_value_drop = tf.nn.dropout(h_state_value_fc, self.keep_prob)
-            state_value = _create_fc_layer(h_state_value_drop, [512, 1])
+            state_value = _fully_connected_layer(h_state_value_drop, [512, 1])
 
         # Connect streams and estimate action values (Q). To improve training stability as suggested
         # by Wang et al., 2015, Q = state value + advantage - mean(advantage).
@@ -125,8 +124,8 @@ class DeepQNetwork():
         self.observed_action_value = tf.placeholder(
             tf.float32, [None], name='Observed_Action_Value')
         self.max_gradient = tf.placeholder(tf.float32, name='Max_Gradient')
-        loss = _get_huber_loss(self.estimated_action_value - self.observed_action_value,
-                               self.max_gradient)
+        loss = _huber_loss(self.estimated_action_value - self.observed_action_value,
+                           self.max_gradient)
         self.learning_rate = tf.placeholder(tf.float32, name='Learning_Rate')
         self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(loss)
 
