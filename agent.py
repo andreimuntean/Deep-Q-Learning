@@ -101,9 +101,12 @@ class Agent():
             states, actions, rewards, next_states, ongoing = self.env.sample_experiences(self.batch_size)
             actions_i = np.stack([self.env.action_space.index(a) for a in actions], axis=0)
 
-            # Determine the true action values using double Q-learning (Hasselt et al., 2015).
-            Q_ = rewards + ongoing * self.discount * self.target_dqn.eval_Q(
-                next_states, self.dqn.eval_optimal_action(next_states))
+            # Determine the true action values.
+            #
+            #                    { r, if next state is terminal
+            # Q(state, action) = {
+            #                    { r + discount * max(Q(next state, <any action>)), otherwise
+            Q_ = rewards + ongoing * self.discount * self.target_dqn.eval_optimal_action_value(next_states)
 
             # Estimate action values, measure errors and update weights.
             self.dqn.train(states,

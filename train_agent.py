@@ -40,7 +40,7 @@ PARSER.add_argument('--num_epochs',
                     metavar='EPOCHS',
                     help='number of epochs to train for',
                     type=int,
-                    default=300)
+                    default=250)
 
 PARSER.add_argument('--epoch_length',
                     metavar='TIME STEPS',
@@ -130,7 +130,7 @@ PARSER.add_argument('--target_network_update_factor',
                     metavar='TAU',
                     help='rate at which target Q-network values shift toward real Q-network values',
                     type=float,
-                    default=0.001)
+                    default=0.0004)
 
 PARSER.add_argument('--observations_per_state',
                     metavar='FRAMES',
