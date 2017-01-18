@@ -1,7 +1,8 @@
 """Trains an agent to play Atari games from OpenAI gym.
 
 Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforcement Learning'
-(Mnih et al., 2013).
+(Mnih et al., 2013) and 'Human-level control through deep reinforcement learning' (Mnih et al.,
+2015).
 """
 
 import agent
@@ -96,6 +97,13 @@ PARSER.add_argument('--train_interval',
                     type=int,
                     default=4)
 
+PARSER.add_argument('--frame_skip',
+                    metavar='FRAMES',
+                    help=('number of frames per time step. Determines how many times an action '
+                          'selected by the agent is repeated'),
+                    type=int,
+                    default=4)
+
 PARSER.add_argument('--batch_size',
                     metavar='EXPERIENCES',
                     help='number of experiences sampled and trained on at once',
@@ -106,7 +114,7 @@ PARSER.add_argument('--learning_rate',
                     metavar='LAMBDA',
                     help='rate at which the network learns from new examples',
                     type=float,
-                    default=0.0002)
+                    default=0.0001)
 
 PARSER.add_argument('--dropout_prob',
                     metavar='DROPOUT',
@@ -239,10 +247,12 @@ def main(args):
     env = environment.AtariWrapper(args.env_name,
                                    args.replay_memory_capacity,
                                    args.observations_per_state,
+                                   args.frame_skip,
                                    args.action_space)
     test_env = environment.AtariWrapper(args.env_name,
                                         100 * args.observations_per_state,
                                         args.observations_per_state,
+                                        args.frame_skip,
                                         args.action_space)
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = args.gpu_memory_alloc

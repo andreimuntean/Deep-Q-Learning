@@ -1,12 +1,11 @@
 """Augments OpenAI Gym Atari environments with features like experience replay.
 
 Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforcement Learning'
-(Mnih et al., 2013).
+(Mnih et al., 2013) and 'Human-level control through deep reinforcement learning' (Mnih et al.,
+2015).
 """
 
-from skimage import color
-from skimage import transform
-
+import cv2
 import gym
 import numpy as np
 
@@ -16,24 +15,15 @@ ACTION_SPACE = {'Pong-v0': [0, 2, 3],  # NONE, UP and DOWN.
                 'Breakout-v0': [1, 2, 3]}  # FIRE (respawn ball, otherwise NOOP), UP and DOWN.
 
 
-def _preprocess_observation(observation):
-    """Transforms the specified observation into an 84x84 grayscale image.
-
-    Returns:
-        An 84x84 tensor with real values between 0 and 1.
-    """
-
-    grayscale_image = color.rgb2gray(observation)
-    resized_image = transform.resize(grayscale_image, [84, 84])
-
-    # Convert pixels from 64-bit floats (between 0 and 1) to 16-bit floats.
-    return resized_image.astype(np.float16)
-
-
 class AtariWrapper:
     """Wraps over an Atari environment from OpenAI Gym and provides experience replay."""
 
-    def __init__(self, env_name, replay_memory_capacity, observations_per_state, action_space=None):
+    def __init__(self,
+                 env_name,
+                 replay_memory_capacity,
+                 observations_per_state,
+                 frame_skip,
+                 action_space=None):
         """Creates the wrapper.
 
         Args:
@@ -44,13 +34,17 @@ class AtariWrapper:
             observations_per_state: Number of consecutive observations within a state. Provides some
                 short-term memory for the learner. Useful in games like Pong where the trajectory of
                 the ball can't be inferred from a single image.
+            frame_skip: Number of frames per time step. Determines how many times an action selected
+                by the agent is repeated.
             action_space: A list of possible actions. If 'action_space' is 'None' and no default
                 configuration exists for this environment, all actions will be allowed.
         """
 
         self.env = gym.make(env_name)
+        self.env.frameskip = 1  # Ensure the gym environment doesn't skip frames as well.
         self.replay_memory_capacity = replay_memory_capacity
         self.state_length = observations_per_state
+        self.frame_skip = frame_skip
         self.done = False
         self.state_space = [84, 84, observations_per_state]
 
@@ -73,9 +67,7 @@ class AtariWrapper:
 
         # Initialize the first state by performing random actions.
         for i in range(observations_per_state):
-            observation, _, _, _ = self.env.step(self.sample_action())
-            self.observations[i] = _preprocess_observation(observation)
-            self.previous_frame = observation
+            self.observations[i], _ = self._step(self.sample_action())
 
         # Initialize the first experience by performing one more random action.
         self.step(self.sample_action())
@@ -103,14 +95,13 @@ class AtariWrapper:
             raise ValueError('Action "{}" is invalid. Valid actions: {}.'.format(action,
                                                                                  self.action_space))
 
-        observation, reward, self.done, _ = self.env.step(action)
+        observation, reward = self._step(action)
 
         # Remember this experience.
         self.actions[self.num_exp] = action
         self.rewards[self.num_exp] = reward
         self.ongoing[self.num_exp] = not self.done
-        self.observations[self.num_exp + self.state_length] = _preprocess_observation(observation)
-        self.previous_frame = observation
+        self.observations[self.num_exp + self.state_length] = observation
         self.num_exp += 1
 
         if self.num_exp == self.replay_memory_capacity:
@@ -186,3 +177,41 @@ class AtariWrapper:
             state[..., i] = self.observations[index + i]
 
         return state
+
+    def _step(self, action):
+        """Performs the specified action self.frame_skip times.
+
+        Args:
+            action: An action that will be repeated self.frame_skip times.
+
+        Returns:
+            An observation (84x84 tensor with real values between 0 and 1) and the accumulated
+            reward.
+        """
+
+        accumulated_frame, accumulated_reward, self.done, _ = self.env.step(action)
+
+        for _ in range(1, self.frame_skip):
+            if self.done:
+                break
+
+            frame, reward, self.done, _ = self.env.step(action)
+            accumulated_frame += frame
+            accumulated_reward += reward
+
+        # The environment may contain objects that flicker, becoming invisible to the agent every
+        # few frames. To combat this, the past self.frame_skip frames are averaged into one.
+        average_frame = accumulated_frame / self.frame_skip
+
+        # Transform the average frame into a grayscale image with values between 0 and 1. Luminance
+        # is extracted using the Y = 0.299 Red + 0.587 Green + 0.114 Blue formula. Values are scaled
+        # between 0 and 1 by further dividing each color channel by 255.
+        grayscale_frame = (average_frame[..., 0] * 0.00117 +
+                           average_frame[..., 1] * 0.0023 +
+                           average_frame[..., 2] * 0.00045)
+
+        # Resize grayscale frame to an 84x84 matrix of 16-bit floats.
+        observation = cv2.resize(
+            grayscale_frame, (84, 84), interpolation=cv2.INTER_NEAREST).astype(np.float16)
+
+        return observation, accumulated_reward
