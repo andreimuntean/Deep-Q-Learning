@@ -41,7 +41,7 @@ PARSER.add_argument('--num_epochs',
                     metavar='EPOCHS',
                     help='number of epochs to train for',
                     type=int,
-                    default=250)
+                    default=200)
 
 PARSER.add_argument('--epoch_length',
                     metavar='TIME STEPS',
@@ -53,13 +53,13 @@ PARSER.add_argument('--test_length',
                     metavar='TIME STEPS',
                     help="number of time steps per test",
                     type=int,
-                    default=75000)
+                    default=36000)
 
 PARSER.add_argument('--test_epsilon',
                     metavar='EPSILON',
                     help='fixed exploration chance used when testing the agent',
                     type=float,
-                    default=0)
+                    default=0.05)
 
 PARSER.add_argument('--start_epsilon',
                     metavar='EPSILON',
@@ -83,13 +83,13 @@ PARSER.add_argument('--replay_memory_capacity',
                     metavar='EXPERIENCES',
                     help='number of most recent experiences remembered',
                     type=int,
-                    default=1000000)
+                    default=500000)
 
 PARSER.add_argument('--wait_before_training',
                     metavar='TIME STEPS',
                     help='number of experiences to accumulate before training starts',
                     type=int,
-                    default=100000)
+                    default=50000)
 
 PARSER.add_argument('--train_interval',
                     metavar='TIME STEPS',
@@ -97,12 +97,19 @@ PARSER.add_argument('--train_interval',
                     type=int,
                     default=4)
 
+PARSER.add_argument('--target_network_reset_interval',
+                    metavar='TAU',
+                    help=('number of experiences to accumulate before target Q-network values '
+                          'reset to real Q-network values'),
+                    type=float,
+                    default=30000)
+
 PARSER.add_argument('--frame_skip',
                     metavar='FRAMES',
                     help=('number of frames per time step. Determines how many times an action '
                           'selected by the agent is repeated'),
                     type=int,
-                    default=4)
+                    default=1)
 
 PARSER.add_argument('--batch_size',
                     metavar='EXPERIENCES',
@@ -114,13 +121,13 @@ PARSER.add_argument('--learning_rate',
                     metavar='LAMBDA',
                     help='rate at which the network learns from new examples',
                     type=float,
-                    default=0.0001)
+                    default=6.25e-5)
 
 PARSER.add_argument('--dropout_prob',
                     metavar='DROPOUT',
                     help='likelihood of neurons from fully connected layers becoming inactive',
                     type=float,
-                    default=0.2)
+                    default=0)
 
 PARSER.add_argument('--max_gradient',
                     metavar='DELTA',
@@ -134,23 +141,17 @@ PARSER.add_argument('--discount',
                     type=float,
                     default=0.99)
 
-PARSER.add_argument('--target_network_update_factor',
-                    metavar='TAU',
-                    help='rate at which target Q-network values shift toward real Q-network values',
-                    type=float,
-                    default=0.0004)
-
 PARSER.add_argument('--observations_per_state',
                     metavar='FRAMES',
                     help='number of consecutive frames within a state',
                     type=int,
-                    default=4)
+                    default=3)
 
 PARSER.add_argument('--gpu_memory_alloc',
                     metavar='PERCENTAGE',
                     help='determines how much GPU memory to allocate for the neural network',
                     type=float,
-                    default=0.2)
+                    default=0.3)
 
 
 def eval_model(player, env, test_length, epsilon, save_path):
@@ -264,12 +265,12 @@ def main(args):
                              args.end_epsilon,
                              args.anneal_duration,
                              args.train_interval,
+                             args.target_network_reset_interval,
                              args.batch_size,
                              args.learning_rate,
                              args.dropout_prob,
                              args.max_gradient,
-                             args.discount,
-                             args.target_network_update_factor)
+                             args.discount)
 
         sess.run(tf.global_variables_initializer())
         saver = tf.train.Saver(max_to_keep=args.num_epochs)

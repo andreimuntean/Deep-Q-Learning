@@ -10,42 +10,33 @@ import numpy as np
 import tensorflow as tf
 
 
-def _create_bias(shape):
-    # Initialize with a slight positive bias to prevent ReLU neurons from dying.
-    value = tf.constant(0.1, shape=shape)
-    return tf.Variable(value, name='Bias')
-
-
-def _create_weights(shape):
-    # Use Xavier initialization.
-    maxval = math.sqrt(6.0 / (np.prod(shape[:-1]) + shape[-1]))
-    minval = -maxval
-    value = tf.random_uniform(shape, minval, maxval)
-    return tf.Variable(value, name='Weights')
-
-
 def _convolutional_layer(x, shape, stride, activation_fn):
     if len(shape) != 4:
         raise ValueError('Shape "{}" is invalid. Must have length 4.'.format(shape))
 
-    W = _create_weights(shape)
-    b = _create_bias([shape[3]])
+    num_input_params = shape[0] * shape[1] * shape[2]
+    num_output_params = shape[0] * shape[1] * shape[3]
+    maxval = math.sqrt(6 / (num_input_params + num_output_params))
+    W = tf.Variable(tf.random_uniform(shape, -maxval, maxval), name='Weights')
+    b = tf.Variable(tf.constant(0.1, shape=[shape[3]]), name='Bias')
     conv = tf.nn.conv2d(x, W, [1, stride, stride, 1], 'VALID')
 
     return activation_fn(tf.nn.bias_add(conv, b))
 
 
-def _fully_connected_layer(x, shape, activation_fn=None):
+def _fully_connected_layer(x, shape, activation_fn, shared_bias=False):
     if len(shape) != 2:
         raise ValueError('Shape "{}" is invalid. Must have length 2.'.format(shape))
 
-    W = _create_weights(shape)
-    b = _create_bias([shape[1]])
+    maxval = math.sqrt(6 / (shape[0] + shape[1]))
+    W = tf.Variable(tf.random_uniform(shape, -maxval, maxval), name='Weights')
 
-    if activation_fn is None:
-        return tf.nn.bias_add(tf.matmul(x, W), b)
+    if shared_bias:
+        b = tf.Variable(tf.constant(0.1, shape=[1]), name='Bias')
+    else:
+        b = tf.Variable(tf.constant(0.1, shape=[shape[1]]), name='Bias')
 
-    return activation_fn(tf.nn.bias_add(tf.matmul(x, W), b))
+    return activation_fn(tf.matmul(x, W) + b)
 
 
 def _huber_loss(x, max_gradient):
@@ -100,12 +91,13 @@ class DeepQNetwork():
         with tf.name_scope('Advantage_Stream'):
             h_advantage_fc = _fully_connected_layer(h_flat, [num_params, 512], tf.nn.relu)
             h_advantage_drop = tf.nn.dropout(h_advantage_fc, self.keep_prob)
-            advantage = _fully_connected_layer(h_advantage_drop, [512, num_actions])
+            advantage = _fully_connected_layer(
+                h_advantage_drop, [512, num_actions], tf.identity, shared_bias=True)
 
         with tf.name_scope('State_Value_Stream'):
             h_state_value_fc = _fully_connected_layer(h_flat, [num_params, 512], tf.nn.relu)
             h_state_value_drop = tf.nn.dropout(h_state_value_fc, self.keep_prob)
-            state_value = _fully_connected_layer(h_state_value_drop, [512, 1])
+            state_value = _fully_connected_layer(h_state_value_drop, [512, 1], tf.identity)
 
         # Connect streams and estimate action values (Q). To improve training stability as suggested
         # by Wang et al., 2015, Q = state value + advantage - mean(advantage).

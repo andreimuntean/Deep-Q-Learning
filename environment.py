@@ -41,7 +41,6 @@ class AtariWrapper:
         """
 
         self.env = gym.make(env_name)
-        self.env.frameskip = 1  # Ensure the gym environment doesn't skip frames as well.
         self.replay_memory_capacity = replay_memory_capacity
         self.state_length = observations_per_state
         self.frame_skip = frame_skip
@@ -189,7 +188,8 @@ class AtariWrapper:
             reward.
         """
 
-        accumulated_frame, accumulated_reward, self.done, _ = self.env.step(action)
+        frame, accumulated_reward, self.done, _ = self.env.step(action)
+        accumulated_frame = frame.astype(np.int32)
 
         for _ in range(1, self.frame_skip):
             if self.done:
