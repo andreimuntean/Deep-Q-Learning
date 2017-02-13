@@ -90,3 +90,6 @@ ENV/
 
 # Models
 models
+
+# Visual Studio Code
+tags

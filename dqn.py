@@ -56,7 +56,7 @@ def _huber_loss(x, max_gradient):
 
 class DeepQNetwork():
     def __init__(self, sess, num_actions, state_shape):
-        """Creates a deep Q network.
+        """Creates a deep Q-network.
 
         Args:
             sess: The associated TensorFlow session.
@@ -70,18 +70,16 @@ class DeepQNetwork():
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
 
         with tf.name_scope('Convolutional_Layer_1'):
-            h_conv1 = _convolutional_layer(self.x, [8, 8, depth, 32], 4, tf.nn.relu)
+            h_conv1 = _convolutional_layer(self.x, [4, 4, depth, 32], 2, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_2'):
-            h_conv2 = _convolutional_layer(h_conv1, [4, 4, 32, 64], 2, tf.nn.relu)
+            h_conv2 = _convolutional_layer(h_conv1, [3, 3, 32, 64], 2, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_3'):
             h_conv3 = _convolutional_layer(h_conv2, [3, 3, 64, 64], 1, tf.nn.relu)
 
         # Flatten the output to feed it into fully connected layers.
-        post_conv_height = math.ceil((math.ceil((height - 7) / 4) - 3) / 2) - 2
-        post_conv_width = math.ceil((math.ceil((width - 7) / 4) - 3) / 2) - 2
-        num_params = post_conv_height * post_conv_width * 64
+        num_params = np.prod(h_conv3.get_shape().as_list()[1:])
         h_flat = tf.reshape(h_conv3, [-1, num_params])
 
         # Diverge into two streams: the first stream learns the advantage of each action and the
@@ -104,8 +102,8 @@ class DeepQNetwork():
         self.Q = state_value + advantage - tf.reduce_mean(advantage, 1, keep_dims=True)
 
         # Estimate the optimal action and its expected value.
-        self.optimal_action = tf.argmax(self.Q, 1, name='Optimal_Action')
-        self.optimal_action_value = tf.reduce_max(self.Q, 1,)
+        self.optimal_action = tf.squeeze(tf.argmax(self.Q, 1, name='Optimal_Action'))
+        self.optimal_action_value = tf.squeeze(tf.reduce_max(self.Q, 1,))
 
         # Estimate the value of the specified action.
         self.action = tf.placeholder(tf.uint8, name='Action')

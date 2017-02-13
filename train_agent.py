@@ -1,4 +1,4 @@
-"""Trains an agent to play Atari games from OpenAI gym.
+"""Trains an agent to play Atari games from OpenAI Gym.
 
 Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforcement Learning'
 (Mnih et al., 2013) and 'Human-level control through deep reinforcement learning' (Mnih et al.,
@@ -47,7 +47,7 @@ PARSER.add_argument('--epoch_length',
                     metavar='TIME STEPS',
                     help='number of time steps per epoch',
                     type=int,
-                    default=200000)
+                    default=128000)
 
 PARSER.add_argument('--test_length',
                     metavar='TIME STEPS',
@@ -59,7 +59,7 @@ PARSER.add_argument('--test_epsilon',
                     metavar='EPSILON',
                     help='fixed exploration chance used when testing the agent',
                     type=float,
-                    default=0.05)
+                    default=0.01)
 
 PARSER.add_argument('--start_epsilon',
                     metavar='EPSILON',
@@ -71,13 +71,13 @@ PARSER.add_argument('--end_epsilon',
                     metavar='EPSILON',
                     help='final value for epsilon (exploration chance)',
                     type=float,
-                    default=0.05)
+                    default=0.01)
 
 PARSER.add_argument('--anneal_duration',
                     metavar='TIME STEPS',
                     help='number of time steps to anneal epsilon from start_epsilon to end_epsilon',
                     type=int,
-                    default=2000000)
+                    default=1000000)
 
 PARSER.add_argument('--replay_memory_capacity',
                     metavar='EXPERIENCES',
@@ -102,7 +102,7 @@ PARSER.add_argument('--target_network_reset_interval',
                     help=('number of experiences to accumulate before target Q-network values '
                           'reset to real Q-network values'),
                     type=float,
-                    default=30000)
+                    default=10000)
 
 PARSER.add_argument('--frame_skip',
                     metavar='FRAMES',
@@ -121,7 +121,7 @@ PARSER.add_argument('--learning_rate',
                     metavar='LAMBDA',
                     help='rate at which the network learns from new examples',
                     type=float,
-                    default=6.25e-5)
+                    default=1e-4)
 
 PARSER.add_argument('--dropout_prob',
                     metavar='DROPOUT',
@@ -133,7 +133,7 @@ PARSER.add_argument('--max_gradient',
                     metavar='DELTA',
                     help='maximum value allowed for gradients during backpropagation',
                     type=float,
-                    default=10)
+                    default=1)
 
 PARSER.add_argument('--discount',
                     metavar='GAMMA',
@@ -151,7 +151,7 @@ PARSER.add_argument('--gpu_memory_alloc',
                     metavar='PERCENTAGE',
                     help='determines how much GPU memory to allocate for the neural network',
                     type=float,
-                    default=0.3)
+                    default=0.25)
 
 
 def eval_model(player, env, test_length, epsilon, save_path):

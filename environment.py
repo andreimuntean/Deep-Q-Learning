@@ -5,10 +5,10 @@ Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforc
 2015).
 """
 
-import cv2
 import gym
 import numpy as np
 
+from scipy import misc
 
 # Specifies restricted action spaces. For games not in this dictionary, all actions are enabled.
 ACTION_SPACE = {'Pong-v0': [0, 2, 3],  # NONE, UP and DOWN.
@@ -45,7 +45,7 @@ class AtariWrapper:
         self.state_length = observations_per_state
         self.frame_skip = frame_skip
         self.done = False
-        self.state_space = [84, 84, observations_per_state]
+        self.state_space = [48, 48, observations_per_state]
 
         if action_space:
             self.action_space = list(action_space)
@@ -61,7 +61,7 @@ class AtariWrapper:
         self.ongoing = np.empty(replay_memory_capacity, np.bool)
 
         # Used for computing both 'current' and 'next' states.
-        self.observations = np.empty([replay_memory_capacity + observations_per_state, 84, 84],
+        self.observations = np.empty([replay_memory_capacity + observations_per_state, 48, 48],
                                      np.float16)
 
         # Initialize the first state by performing random actions.
@@ -151,7 +151,7 @@ class AtariWrapper:
         """Gets the current state.
 
         Returns:
-            An 84x84x(self.observations_per_state) tensor with real values between 0 and 1.
+            A 48x48x(self.observations_per_state) tensor with float32 values between 0 and 1.
         """
 
         return self._get_state(-1)
@@ -164,10 +164,10 @@ class AtariWrapper:
         the ball can't be inferred from a single image.
 
         Returns:
-            An 84x84x(observations_per_state) tensor with real values between 0 and 1.
+            A 48x48x(observations_per_state) tensor with float32 values between 0 and 1.
         """
 
-        state = np.empty([84, 84, self.state_length], np.float16)
+        state = np.empty([48, 48, self.state_length], np.float16)
 
         # Allow negative indexing by wrapping around.
         index = index % self.num_exp
@@ -184,7 +184,7 @@ class AtariWrapper:
             action: An action that will be repeated self.frame_skip times.
 
         Returns:
-            An observation (84x84 tensor with real values between 0 and 1) and the accumulated
+            An observation (48x48 tensor with float32 values between 0 and 1) and the accumulated
             reward.
         """
 
@@ -203,15 +203,12 @@ class AtariWrapper:
         # few frames. To combat this, the past self.frame_skip frames are averaged into one.
         average_frame = accumulated_frame / self.frame_skip
 
-        # Transform the average frame into a grayscale image with values between 0 and 1. Luminance
-        # is extracted using the Y = 0.299 Red + 0.587 Green + 0.114 Blue formula. Values are scaled
-        # between 0 and 1 by further dividing each color channel by 255.
-        grayscale_frame = (average_frame[..., 0] * 0.00117 +
-                           average_frame[..., 1] * 0.0023 +
-                           average_frame[..., 2] * 0.00045)
+        # Transform the observation into a grayscale image with values between 0 and 1. Use the
+        # simple np.mean method instead of sophisticated luminance extraction techniques since they
+        # do not seem to improve training.
+        grayscale_frame = average_frame[24:194].mean(2)
 
-        # Resize grayscale frame to an 84x84 matrix of 16-bit floats.
-        observation = cv2.resize(
-            grayscale_frame, (84, 84), interpolation=cv2.INTER_NEAREST).astype(np.float16)
+        # Downsample the grayscale frame to a 48x48 matrix of 16-bit floats.
+        observation = misc.imresize(grayscale_frame, (48, 48)).astype(np.float16)
 
         return observation, accumulated_reward

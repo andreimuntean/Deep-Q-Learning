@@ -122,7 +122,7 @@ class Agent():
         state = np.expand_dims(state, axis=0)
 
         # Estimate the optimal action index.
-        action_i = self.dqn.eval_optimal_action(state)[0]
+        action_i = self.dqn.eval_optimal_action(state)
         action = self.env.action_space[action_i]
 
         return action
