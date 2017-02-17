@@ -194,7 +194,7 @@ def eval_model(player, env, test_length, epsilon, save_path):
             else:
                 action = player.get_action(state)
 
-            Q = player.dqn.eval_optimal_action_value(np.expand_dims(state, axis=0))[0]
+            Q = player.dqn.eval_optimal_action_value(np.expand_dims(state, axis=0))
 
             # Record statistics.
             local_total_reward += env.step(action)

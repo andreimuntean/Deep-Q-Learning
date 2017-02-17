@@ -170,7 +170,7 @@ class AtariWrapper:
         state = np.empty([48, 48, self.state_length], np.float16)
 
         # Allow negative indexing by wrapping around.
-        index = index % self.num_exp
+        index = 1 + index % self.num_exp
 
         for i in range(self.state_length):
             state[..., i] = self.observations[index + i]
@@ -206,7 +206,7 @@ class AtariWrapper:
         # Transform the observation into a grayscale image with values between 0 and 1. Use the
         # simple np.mean method instead of sophisticated luminance extraction techniques since they
         # do not seem to improve training.
-        grayscale_frame = average_frame[24:194].mean(2)
+        grayscale_frame = average_frame.mean(2)
 
         # Downsample the grayscale frame to a 48x48 matrix of 16-bit floats.
         observation = misc.imresize(grayscale_frame, (48, 48)).astype(np.float16)
