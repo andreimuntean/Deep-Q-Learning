@@ -10,10 +10,15 @@ import argparse
 import csv
 import datetime
 import environment
+import logging
 import numpy as np
 import os
 import random
 import tensorflow as tf
+
+
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 
 
 PARSER = argparse.ArgumentParser(description='Train an agent to play Atari games.')
@@ -32,9 +37,9 @@ PARSER.add_argument('--load_path',
                     metavar='PATH',
                     help='loads a trained model from the specified path')
 
-PARSER.add_argument('--save_dir',
+PARSER.add_argument('--log_dir',
                     metavar='PATH',
-                    help='saves the model at the specified path',
+                    help='path to a directory where to save & restore the model and log events',
                     default='models/tmp')
 
 PARSER.add_argument('--num_epochs',
@@ -47,19 +52,19 @@ PARSER.add_argument('--epoch_length',
                     metavar='TIME STEPS',
                     help='number of time steps per epoch',
                     type=int,
-                    default=128000)
+                    default=200000)
 
 PARSER.add_argument('--test_length',
                     metavar='TIME STEPS',
                     help="number of time steps per test",
                     type=int,
-                    default=36000)
+                    default=50000)
 
 PARSER.add_argument('--test_epsilon',
                     metavar='EPSILON',
                     help='fixed exploration chance used when testing the agent',
                     type=float,
-                    default=0.01)
+                    default=0.001)
 
 PARSER.add_argument('--start_epsilon',
                     metavar='EPSILON',
@@ -104,13 +109,6 @@ PARSER.add_argument('--target_network_reset_interval',
                     type=float,
                     default=10000)
 
-PARSER.add_argument('--frame_skip',
-                    metavar='FRAMES',
-                    help=('number of frames per time step. Determines how many times an action '
-                          'selected by the agent is repeated'),
-                    type=int,
-                    default=1)
-
 PARSER.add_argument('--batch_size',
                     metavar='EXPERIENCES',
                     help='number of experiences sampled and trained on at once',
@@ -129,11 +127,11 @@ PARSER.add_argument('--dropout_prob',
                     type=float,
                     default=0)
 
-PARSER.add_argument('--max_gradient',
+PARSER.add_argument('--max_gradient_norm',
                     metavar='DELTA',
-                    help='maximum value allowed for gradients during backpropagation',
+                    help='maximum value allowed for the L2-norms of gradients',
                     type=float,
-                    default=1)
+                    default=10)
 
 PARSER.add_argument('--discount',
                     metavar='GAMMA',
@@ -154,15 +152,16 @@ PARSER.add_argument('--gpu_memory_alloc',
                     default=0.25)
 
 
-def eval_model(player, env, test_length, epsilon, save_path):
+def eval_model(player, env, num_epochs_trained, test_length, epsilon, summary_writer):
     """Evaluates the performance of the specified agent. Writes results in a CSV file.
 
     Args:
         player: An agent.
         env: Environment in which the agent is tested.
+        num_epochs_trained: Number of epochs that the agent trained for.
         test_length: Number of time steps to test the agent for.
         epsilon: Likelihood of the agent performing a random action.
-        save_path: CSV file where results will be saved.
+        summary_writer: A TensorFlow object that writes summaries.
     """
 
     total_reward = 0
@@ -194,7 +193,8 @@ def eval_model(player, env, test_length, epsilon, save_path):
             else:
                 action = player.get_action(state)
 
-            Q = player.dqn.eval_optimal_action_value(np.expand_dims(state, axis=0))
+            # Cast NumPy scalar to float.
+            Q = float(player.dqn.eval_optimal_action_value(np.expand_dims(state, axis=0)))
 
             # Record statistics.
             local_total_reward += env.step(action)
@@ -218,28 +218,26 @@ def eval_model(player, env, test_length, epsilon, save_path):
         max_Q = max(max_Q, local_max_Q)
 
     # Save results.
-    with open(save_path, 'a') as csvfile:
-        writer = csv.writer(csvfile)
+    if num_games_finished > 0:
+        # Extract more statistics.
+        avg_reward = total_reward / num_games_finished
+        avg_Q = total_Q / time_step
+        avg_min_Q = summed_min_Qs / num_games_finished
+        avg_max_Q = summed_max_Qs / num_games_finished
 
-        if num_games_finished > 0:
-            # Extract more statistics.
-            avg_reward = total_reward / num_games_finished
-            avg_Q = total_Q / time_step
-            avg_min_Q = summed_min_Qs / num_games_finished
-            avg_max_Q = summed_max_Qs / num_games_finished
+        summary = tf.Summary()
+        summary.value.add(tag='testing/num_games_finished', simple_value=num_games_finished)
+        summary.value.add(tag='testing/average_reward', simple_value=avg_reward)
+        summary.value.add(tag='testing/minimum_reward', simple_value=min_reward)
+        summary.value.add(tag='testing/maximum_reward', simple_value=max_reward)
+        summary.value.add(tag='testing/average_Q', simple_value=avg_Q)
+        summary.value.add(tag='testing/average_minimum_Q', simple_value=avg_min_Q)
+        summary.value.add(tag='testing/minimum_Q', simple_value=min_Q)
+        summary.value.add(tag='testing/average_maximum_Q', simple_value=avg_max_Q)
+        summary.value.add(tag='testing/maximum_Q', simple_value=max_Q)
 
-            writer.writerow([num_games_finished,
-                             avg_reward,
-                             min_reward,
-                             max_reward,
-                             avg_Q,
-                             avg_min_Q,
-                             min_Q,
-                             avg_max_Q,
-                             max_Q])
-        else:
-            # The agent got stuck during the first game.
-            writer.writerow([0, 0, 0, 0, 0, 0, 0, 0, 0])
+        summary_writer.add_summary(summary, num_epochs_trained)
+        summary_writer.flush()
 
 
 def main(args):
@@ -248,13 +246,16 @@ def main(args):
     env = environment.AtariWrapper(args.env_name,
                                    args.replay_memory_capacity,
                                    args.observations_per_state,
-                                   args.frame_skip,
                                    args.action_space)
     test_env = environment.AtariWrapper(args.env_name,
                                         100 * args.observations_per_state,
                                         args.observations_per_state,
-                                        args.frame_skip,
                                         args.action_space)
+
+    checkpoint_dir = os.path.join(args.log_dir, 'checkpoint')
+    summary_dir = os.path.join(args.log_dir, 'summary')
+    summary_writer = tf.summary.FileWriter(summary_dir)
+
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = args.gpu_memory_alloc
 
@@ -269,7 +270,7 @@ def main(args):
                              args.batch_size,
                              args.learning_rate,
                              args.dropout_prob,
-                             args.max_gradient,
+                             args.max_gradient_norm,
                              args.discount)
 
         sess.run(tf.global_variables_initializer())
@@ -277,30 +278,46 @@ def main(args):
 
         if args.load_path:
             saver.restore(sess, args.load_path)
-            print('Restored model from "{}".'.format(args.load_path))
+            LOGGER.info('Restored model from "%s".', args.load_path)
 
         # Accumulate experiences.
         for _ in range(args.wait_before_training):
             env.step(env.sample_action())
 
-        print('[{}] Accumulated {} experiences.'.format(
-            datetime.datetime.now(), args.wait_before_training))
+        env.reset()
+        LOGGER.info('Accumulated %d experiences.', args.wait_before_training)
 
         for epoch_i in range(args.num_epochs):
             for _ in range(args.epoch_length):
                 player.train()
 
-            if not os.path.exists(args.save_dir):
-                os.makedirs(args.save_dir)
+                if env.done:
+                    LOGGER.info('Finished episode. Total reward: %d. Length: %d.',
+                                env.episode_reward,
+                                env.episode_length)
+
+                    summary = tf.Summary()
+                    summary.value.add(tag='training/episode_length',
+                                      simple_value=env.episode_length)
+                    summary.value.add(tag='training/episode_reward',
+                                      simple_value=env.episode_reward)
+                    summary.value.add(tag='training/fps', simple_value=env.fps)
+                    summary.value.add(tag='training/epsilon', simple_value=player.epsilon)
+
+                    total_time_steps = args.train_interval * player.dqn.global_step.eval()
+                    summary_writer.add_summary(summary, total_time_steps)
+                    summary_writer.flush()
+
+            if not os.path.exists(checkpoint_dir):
+                os.makedirs(checkpoint_dir)
 
             file_name = '{}.{:05d}-of-{:05d}'.format(args.env_name, epoch_i, args.num_epochs)
-            model_path = os.path.join(args.save_dir, file_name)
+            model_path = os.path.join(checkpoint_dir, file_name)
             saver.save(sess, model_path)
-            print('[{}] Saved model to "{}".'.format(datetime.datetime.now(), model_path))
+            LOGGER.info('Saved model to "%s".', model_path)
 
-            results_path = os.path.join(args.save_dir, 'test_results.csv')
-            eval_model(player, test_env, args.test_length, args.test_epsilon, results_path)
-            print('[{}] Saved test results to "{}".'.format(datetime.datetime.now(), results_path))
+            eval_model(
+                player, test_env, epoch_i, args.test_length, args.test_epsilon, summary_writer)
 
 
 if __name__ == '__main__':

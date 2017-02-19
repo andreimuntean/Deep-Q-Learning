@@ -24,7 +24,7 @@ class Agent():
                  batch_size,
                  learning_rate,
                  dropout_prob,
-                 max_gradient,
+                 max_gradient_norm,
                  discount):
         """An agent that learns to play Atari games using deep Q-learning.
 
@@ -43,23 +43,25 @@ class Agent():
             batch_size: Number of experiences sampled and trained on at once.
             learning_rate: The speed with which the network learns from new examples.
             dropout_prob: Likelihood of neurons from fully connected layers becoming inactive.
-            max_gradient: Maximum value allowed for gradients during backpropagation. Gradients that
-                would otherwise surpass this value are reduced to it.
+            max_gradient_norm: Maximum value allowed for the L2-norms of gradients. Gradients with
+                norms that would otherwise surpass this value are scaled down.
             discount: Discount factor for future rewards.
         """
 
         self.sess = sess
         self.env = env
-        self.dqn = dqn.DeepQNetwork(sess, len(env.action_space), env.state_space)
+        self.dqn = dqn.DeepQNetwork(sess,
+                                    len(env.action_space),
+                                    env.state_space,
+                                    learning_rate,
+                                    dropout_prob,
+                                    max_gradient_norm)
         self.start_epsilon = start_epsilon
         self.end_epsilon = end_epsilon
         self.anneal_duration = anneal_duration
         self.train_interval = train_interval
         self.target_network_reset_interval = target_network_reset_interval
         self.batch_size = batch_size
-        self.learning_rate = learning_rate
-        self.dropout_prob = dropout_prob
-        self.max_gradient = max_gradient
         self.discount = discount
         self.time_step = 0
         self.episodes_played = 0
@@ -67,7 +69,12 @@ class Agent():
 
         # Create target Q-network.
         dqn_params = tf.trainable_variables()
-        self.target_dqn = dqn.DeepQNetwork(sess, len(env.action_space), env.state_space)
+        self.target_dqn = dqn.DeepQNetwork(sess,
+                                           len(env.action_space),
+                                           env.state_space,
+                                           learning_rate,
+                                           dropout_prob,
+                                           max_gradient_norm)
         target_dqn_params = tf.trainable_variables()[len(dqn_params):]
 
         # Reset target Q-network values to the actual Q-network values.
@@ -104,12 +111,7 @@ class Agent():
                 next_states, self.dqn.eval_optimal_action(next_states))
 
             # Estimate action values, measure errors and update weights.
-            self.dqn.train(states,
-                           actions_i,
-                           Q_,
-                           self.learning_rate,
-                           self.dropout_prob,
-                           self.max_gradient)
+            self.dqn.train(states, actions_i, Q_)
 
         # Occasionally reset target Q-network values to actual Q-network values.
         if self.time_step % self.target_network_reset_interval == 0:

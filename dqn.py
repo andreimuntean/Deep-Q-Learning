@@ -18,44 +18,31 @@ def _convolutional_layer(x, shape, stride, activation_fn):
     num_output_params = shape[0] * shape[1] * shape[3]
     maxval = math.sqrt(6 / (num_input_params + num_output_params))
     W = tf.Variable(tf.random_uniform(shape, -maxval, maxval), name='Weights')
-    b = tf.Variable(tf.constant(0.1, shape=[shape[3]]), name='Bias')
+    b = tf.Variable(tf.constant(0.1, tf.float32, [shape[3]]), name='Bias')
     conv = tf.nn.conv2d(x, W, [1, stride, stride, 1], 'VALID')
 
     return activation_fn(tf.nn.bias_add(conv, b))
 
 
-def _fully_connected_layer(x, shape, activation_fn, shared_bias=False):
+def _fully_connected_layer(x, shape, bias_shape, activation_fn):
     if len(shape) != 2:
         raise ValueError('Shape "{}" is invalid. Must have length 2.'.format(shape))
 
-    maxval = math.sqrt(6 / (shape[0] + shape[1]))
+    maxval = 1 / math.sqrt(shape[0] + shape[1])
     W = tf.Variable(tf.random_uniform(shape, -maxval, maxval), name='Weights')
-
-    if shared_bias:
-        b = tf.Variable(tf.constant(0.1, shape=[1]), name='Bias')
-    else:
-        b = tf.Variable(tf.constant(0.1, shape=[shape[1]]), name='Bias')
+    b = tf.Variable(tf.constant(0.1, tf.float32, bias_shape), name='Bias')
 
     return activation_fn(tf.matmul(x, W) + b)
 
 
-def _huber_loss(x, max_gradient):
-    """Computes the Huber loss, which restricts gradients from exceeding the specified value.
-
-    Args:
-        x: A tensor.
-        max_gradient: Value at which the gradient is clipped.
-    """
-
-    loss = tf.select(tf.abs(x) < max_gradient,
-                     0.5 * tf.square(x),
-                     max_gradient * (tf.abs(x) - 0.5 * max_gradient))
-
-    return tf.reduce_mean(loss)
-
-
 class DeepQNetwork():
-    def __init__(self, sess, num_actions, state_shape):
+    def __init__(self,
+                 sess,
+                 num_actions,
+                 state_shape,
+                 learning_rate,
+                 dropout_prob,
+                 max_gradient_norm):
         """Creates a deep Q-network.
 
         Args:
@@ -63,17 +50,23 @@ class DeepQNetwork():
             num_actions: Number of possible actions.
             state_shape: A vector with three values, representing the width, height and depth of
                 input states. For example, the shape of 100x80 RGB images is [100, 80, 3].
+            learning_rate: The speed with which the network learns from new examples.
+            dropout_prob: Likelihood of individual neurons from the fully connected layer becoming
+                inactive.
+            max_gradient_norm: Maximum value allowed for the L2-norms of gradients. Gradients with
+                norms that would otherwise surpass this value are scaled down.
         """
 
         self.sess = sess
+        self.dropout_prob = dropout_prob
         width, height, depth = state_shape
         self.x = tf.placeholder(tf.float32, [None, width, height, depth], name='Input_States')
 
         with tf.name_scope('Convolutional_Layer_1'):
-            h_conv1 = _convolutional_layer(self.x, [4, 4, depth, 32], 2, tf.nn.relu)
+            h_conv1 = _convolutional_layer(self.x, [4, 4, depth, 64], 2, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_2'):
-            h_conv2 = _convolutional_layer(h_conv1, [3, 3, 32, 64], 2, tf.nn.relu)
+            h_conv2 = _convolutional_layer(h_conv1, [3, 3, 64, 64], 2, tf.nn.relu)
 
         with tf.name_scope('Convolutional_Layer_3'):
             h_conv3 = _convolutional_layer(h_conv2, [3, 3, 64, 64], 1, tf.nn.relu)
@@ -82,20 +75,20 @@ class DeepQNetwork():
         num_params = np.prod(h_conv3.get_shape().as_list()[1:])
         h_flat = tf.reshape(h_conv3, [-1, num_params])
 
-        # Diverge into two streams: the first stream learns the advantage of each action and the
-        # second stream estimates state values.
         self.keep_prob = tf.placeholder(tf.float32, name='Keep_Prob')
 
         with tf.name_scope('Advantage_Stream'):
-            h_advantage_fc = _fully_connected_layer(h_flat, [num_params, 512], tf.nn.relu)
+            h_advantage_fc = _fully_connected_layer(h_flat, [num_params, 512], [512], tf.nn.relu)
             h_advantage_drop = tf.nn.dropout(h_advantage_fc, self.keep_prob)
+
+            # Use a single shared bias for each action.
             advantage = _fully_connected_layer(
-                h_advantage_drop, [512, num_actions], tf.identity, shared_bias=True)
+                h_advantage_drop, [512, num_actions], [1], tf.identity)
 
         with tf.name_scope('State_Value_Stream'):
-            h_state_value_fc = _fully_connected_layer(h_flat, [num_params, 512], tf.nn.relu)
+            h_state_value_fc = _fully_connected_layer(h_flat, [num_params, 512], [512], tf.nn.relu)
             h_state_value_drop = tf.nn.dropout(h_state_value_fc, self.keep_prob)
-            state_value = _fully_connected_layer(h_state_value_drop, [512, 1], tf.identity)
+            state_value = _fully_connected_layer(h_state_value_drop, [512, 1], [1], tf.identity)
 
         # Connect streams and estimate action values (Q). To improve training stability as suggested
         # by Wang et al., 2015, Q = state value + advantage - mean(advantage).
@@ -103,7 +96,7 @@ class DeepQNetwork():
 
         # Estimate the optimal action and its expected value.
         self.optimal_action = tf.squeeze(tf.argmax(self.Q, 1, name='Optimal_Action'))
-        self.optimal_action_value = tf.squeeze(tf.reduce_max(self.Q, 1,))
+        self.optimal_action_value = tf.squeeze(tf.reduce_max(self.Q, 1))
 
         # Estimate the value of the specified action.
         self.action = tf.placeholder(tf.uint8, name='Action')
@@ -113,11 +106,17 @@ class DeepQNetwork():
         # Compare with the observed action value.
         self.observed_action_value = tf.placeholder(
             tf.float32, [None], name='Observed_Action_Value')
-        self.max_gradient = tf.placeholder(tf.float32, name='Max_Gradient')
-        loss = _huber_loss(self.estimated_action_value - self.observed_action_value,
-                           self.max_gradient)
-        self.learning_rate = tf.placeholder(tf.float32, name='Learning_Rate')
-        self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(loss)
+
+        # Compute the loss function and regularize it by clipping the norm of its gradients.
+        loss = tf.nn.l2_loss(self.estimated_action_value - self.observed_action_value)
+        gradients = tf.gradients(loss, tf.trainable_variables())
+        clipped_gradients, _ = tf.clip_by_global_norm(gradients, max_gradient_norm)
+
+        # Perform gradient descent.
+        grads_and_vars = list(zip(clipped_gradients, tf.trainable_variables()))
+        self.global_step = tf.Variable(tf.constant(0, tf.int64), trainable=False, name='Global_Step')
+        self.train_step = [tf.train.AdamOptimizer(learning_rate).apply_gradients(grads_and_vars),
+                           self.global_step.assign_add(1)]
 
     def eval_optimal_action(self, state):
         """Estimates the optimal action for the specified state.
@@ -150,29 +149,16 @@ class DeepQNetwork():
                                                                      self.action: action,
                                                                      self.keep_prob: 1})
 
-    def train(self,
-              state,
-              action,
-              observed_action_value,
-              learning_rate,
-              dropout_prob,
-              max_gradient):
+    def train(self, state, action, observed_action_value):
         """Learns by performing one step of gradient descent.
 
         Args:
             state: A state. Can be batched into multiple states.
             action: An action. Can be batched into multiple actions.
             observed_action_value: An observed action value (the ground truth).
-            learning_rate: The speed with which the network learns from new examples.
-            dropout_prob: Likelihood of individual neurons from the fully connected layer becoming
-                inactive.
-            max_gradient: Maximum value allowed for gradients during backpropagation. Gradients that
-                would otherwise surpass this value are reduced to it.
         """
 
         self.sess.run(self.train_step, feed_dict={self.x: state,
                                                   self.action: action,
                                                   self.observed_action_value: observed_action_value,
-                                                  self.learning_rate: learning_rate,
-                                                  self.keep_prob: 1 - dropout_prob,
-                                                  self.max_gradient: max_gradient})
+                                                  self.keep_prob: 1 - self.dropout_prob})
