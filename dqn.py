@@ -114,9 +114,9 @@ class DeepQNetwork():
 
         # Perform gradient descent.
         grads_and_vars = list(zip(clipped_gradients, tf.trainable_variables()))
-        self.global_step = tf.Variable(tf.constant(0, tf.int64), trainable=False, name='Global_Step')
-        self.train_step = [tf.train.AdamOptimizer(learning_rate).apply_gradients(grads_and_vars),
-                           self.global_step.assign_add(1)]
+        self.global_step = tf.Variable(tf.constant(0, tf.int64), False, name='Global_Step')
+        self.train_step = tf.train.AdamOptimizer(learning_rate).apply_gradients(grads_and_vars,
+                                                                                self.global_step)
 
     def eval_optimal_action(self, state):
         """Estimates the optimal action for the specified state.
