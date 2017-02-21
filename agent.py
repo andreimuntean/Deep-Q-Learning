@@ -77,7 +77,7 @@ class Agent():
 
         # Create target Q-network.
         dqn_params = tf.trainable_variables()
-        self.target_dqn = dqn.DeepQNetwork(env.state_space, env.num_actions)
+        self.target_dqn = dqn.DeepQNetwork(env.state_shape, env.num_actions)
         target_dqn_params = tf.trainable_variables()[len(dqn_params):]
 
         # Reset target Q-network values to the actual Q-network values.

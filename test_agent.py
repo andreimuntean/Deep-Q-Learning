@@ -65,7 +65,7 @@ def main(args):
     """Loads a trained agent that plays Atari games from OpenAI Gym."""
 
     env = environment.AtariWrapper(
-        args.env_name, args.observations_per_state, args.max_episode_length, 100, args.action_space)
+        args.env_name, args.max_episode_length, 100, args.observations_per_state, args.action_space)
 
     if args.save_path:
         env.gym_env = wrappers.Monitor(env.gym_env, args.save_path)
@@ -82,8 +82,8 @@ def main(args):
 
             for t in range(args.max_episode_length):
                 state = env.get_state()
-                action_i = player.get_action(state)
-                reward = env.step(env.action_space[action_i])
+                action = player.get_action(state)
+                reward = env.step(action)
                 episode_reward += reward
 
                 if args.render:
