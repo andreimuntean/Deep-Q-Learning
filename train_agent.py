@@ -7,11 +7,8 @@ Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforc
 
 import agent
 import argparse
-import csv
-import datetime
 import environment
 import logging
-import numpy as np
 import os
 import random
 import tensorflow as tf
@@ -57,6 +54,12 @@ PARSER.add_argument('--epoch_length',
 PARSER.add_argument('--test_length',
                     metavar='TIME STEPS',
                     help="number of time steps per test",
+                    type=int,
+                    default=50000)
+
+PARSER.add_argument('--max_episode_length',
+                    metavar='TIME STEPS',
+                    help='maximum number of time steps per episode',
                     type=int,
                     default=50000)
 
@@ -121,12 +124,6 @@ PARSER.add_argument('--learning_rate',
                     type=float,
                     default=1e-4)
 
-PARSER.add_argument('--dropout_prob',
-                    metavar='DROPOUT',
-                    help='likelihood of neurons from fully connected layers becoming inactive',
-                    type=float,
-                    default=0)
-
 PARSER.add_argument('--max_gradient_norm',
                     metavar='DELTA',
                     help='maximum value allowed for the L2-norms of gradients',
@@ -152,116 +149,35 @@ PARSER.add_argument('--gpu_memory_alloc',
                     default=0.25)
 
 
-def eval_model(player, env, num_epochs_trained, test_length, epsilon, summary_writer):
-    """Evaluates the performance of the specified agent. Writes results in a CSV file.
-
-    Args:
-        player: An agent.
-        env: Environment in which the agent is tested.
-        num_epochs_trained: Number of epochs that the agent trained for.
-        test_length: Number of time steps to test the agent for.
-        epsilon: Likelihood of the agent performing a random action.
-        summary_writer: A TensorFlow object that writes summaries.
-    """
-
-    total_reward = 0
-    min_reward = 1e7
-    max_reward = -1e7
-    total_Q = 0
-    summed_min_Qs = 0
-    min_Q = 1e7
-    summed_max_Qs = 0
-    max_Q = -1e7
-    time_step = 0
-    num_games_finished = 0
-
-    while time_step < test_length:
-        local_total_reward = 0
-        local_total_Q = 0
-        local_min_Q = 1e7
-        local_max_Q = -1e7
-        local_time_step = 0
-        env.reset()
-
-        while time_step + local_time_step < test_length and not env.done:
-            local_time_step += 1
-            state = env.get_state()
-
-            # Occasionally try a random action (explore).
-            if random.random() < epsilon:
-                action = env.sample_action()
-            else:
-                action = player.get_action(state)
-
-            # Cast NumPy scalar to float.
-            Q = float(player.dqn.eval_optimal_action_value(np.expand_dims(state, axis=0)))
-
-            # Record statistics.
-            local_total_reward += env.step(action)
-            local_total_Q += Q
-            local_min_Q = min(local_min_Q, Q)
-            local_max_Q = max(local_max_Q, Q)
-
-        if not env.done:
-            # Discard unfinished game.
-            break
-
-        num_games_finished += 1
-        time_step += local_time_step
-        total_reward += local_total_reward
-        min_reward = min(min_reward, local_total_reward)
-        max_reward = max(max_reward, local_total_reward)
-        total_Q += local_total_Q
-        summed_min_Qs += local_min_Q
-        summed_max_Qs += local_max_Q
-        min_Q = min(min_Q, local_min_Q)
-        max_Q = max(max_Q, local_max_Q)
-
-    # Save results.
-    if num_games_finished > 0:
-        # Extract more statistics.
-        avg_reward = total_reward / num_games_finished
-        avg_Q = total_Q / time_step
-        avg_min_Q = summed_min_Qs / num_games_finished
-        avg_max_Q = summed_max_Qs / num_games_finished
-
-        summary = tf.Summary()
-        summary.value.add(tag='testing/num_games_finished', simple_value=num_games_finished)
-        summary.value.add(tag='testing/average_reward', simple_value=avg_reward)
-        summary.value.add(tag='testing/minimum_reward', simple_value=min_reward)
-        summary.value.add(tag='testing/maximum_reward', simple_value=max_reward)
-        summary.value.add(tag='testing/average_Q', simple_value=avg_Q)
-        summary.value.add(tag='testing/average_minimum_Q', simple_value=avg_min_Q)
-        summary.value.add(tag='testing/minimum_Q', simple_value=min_Q)
-        summary.value.add(tag='testing/average_maximum_Q', simple_value=avg_max_Q)
-        summary.value.add(tag='testing/maximum_Q', simple_value=max_Q)
-
-        summary_writer.add_summary(summary, num_epochs_trained)
-        summary_writer.flush()
-
-
 def main(args):
     """Trains an agent to play Atari games."""
 
     env = environment.AtariWrapper(args.env_name,
+                                   args.max_episode_length,
                                    args.replay_memory_capacity,
                                    args.observations_per_state,
                                    args.action_space)
     test_env = environment.AtariWrapper(args.env_name,
+                                        args.max_episode_length,
                                         100 * args.observations_per_state,
                                         args.observations_per_state,
                                         args.action_space)
+
+    if not os.path.exists(args.log_dir):
+        os.makedirs(args.log_dir)
 
     checkpoint_dir = os.path.join(args.log_dir, 'checkpoint')
     summary_dir = os.path.join(args.log_dir, 'summary')
     summary_writer = tf.summary.FileWriter(summary_dir)
 
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
+
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = args.gpu_memory_alloc
 
     with tf.Session(config=config) as sess:
-        player = agent.Agent(sess,
-                             env,
+        player = agent.Agent(env,
                              args.start_epsilon,
                              args.end_epsilon,
                              args.anneal_duration,
@@ -269,7 +185,6 @@ def main(args):
                              args.target_network_reset_interval,
                              args.batch_size,
                              args.learning_rate,
-                             args.dropout_prob,
                              args.max_gradient_norm,
                              args.discount)
 
@@ -304,20 +219,90 @@ def main(args):
                     summary.value.add(tag='training/fps', simple_value=env.fps)
                     summary.value.add(tag='training/epsilon', simple_value=player.epsilon)
 
-                    total_time_steps = args.train_interval * player.dqn.global_step.eval()
+                    total_time_steps = args.train_interval * player.global_step.eval()
                     summary_writer.add_summary(summary, total_time_steps)
                     summary_writer.flush()
-
-            if not os.path.exists(checkpoint_dir):
-                os.makedirs(checkpoint_dir)
 
             file_name = '{}.{:05d}-of-{:05d}'.format(args.env_name, epoch_i, args.num_epochs)
             model_path = os.path.join(checkpoint_dir, file_name)
             saver.save(sess, model_path)
             LOGGER.info('Saved model to "%s".', model_path)
 
-            eval_model(
-                player, test_env, epoch_i, args.test_length, args.test_epsilon, summary_writer)
+            # Evaluate the model.
+            total_reward = 0
+            min_reward = 1e7
+            max_reward = -1e7
+            total_Q = 0
+            summed_min_Qs = 0
+            min_Q = 1e7
+            summed_max_Qs = 0
+            max_Q = -1e7
+            time_step = 0
+            num_games_finished = 0
+
+            while time_step < args.test_length:
+                local_total_reward = 0
+                local_total_Q = 0
+                local_min_Q = 1e7
+                local_max_Q = -1e7
+                local_time_step = 0
+                test_env.reset()
+
+                while not test_env.done and time_step + local_time_step < args.test_length:
+                    local_time_step += 1
+                    state = test_env.get_state()
+
+                    # Occasionally try a random action (explore).
+                    if random.random() < args.test_epsilon:
+                        action = test_env.sample_action()
+                    else:
+                        action = player.get_action(state)
+
+                    # Cast NumPy scalar to float.
+                    Q = float(player.dqn.get_optimal_action_value(state))
+
+                    # Record statistics.
+                    local_total_reward += test_env.step(action)
+                    local_total_Q += Q
+                    local_min_Q = min(local_min_Q, Q)
+                    local_max_Q = max(local_max_Q, Q)
+
+                if not test_env.done:
+                    # Discard unfinished game.
+                    break
+
+                num_games_finished += 1
+                time_step += local_time_step
+                total_reward += local_total_reward
+                min_reward = min(min_reward, local_total_reward)
+                max_reward = max(max_reward, local_total_reward)
+                total_Q += local_total_Q
+                summed_min_Qs += local_min_Q
+                summed_max_Qs += local_max_Q
+                min_Q = min(min_Q, local_min_Q)
+                max_Q = max(max_Q, local_max_Q)
+
+            # Save results.
+            if num_games_finished > 0:
+                # Extract more statistics.
+                avg_reward = total_reward / num_games_finished
+                avg_Q = total_Q / time_step
+                avg_min_Q = summed_min_Qs / num_games_finished
+                avg_max_Q = summed_max_Qs / num_games_finished
+
+                summary = tf.Summary()
+                summary.value.add(tag='testing/num_games_finished', simple_value=num_games_finished)
+                summary.value.add(tag='testing/average_reward', simple_value=avg_reward)
+                summary.value.add(tag='testing/minimum_reward', simple_value=min_reward)
+                summary.value.add(tag='testing/maximum_reward', simple_value=max_reward)
+                summary.value.add(tag='testing/average_Q', simple_value=avg_Q)
+                summary.value.add(tag='testing/average_minimum_Q', simple_value=avg_min_Q)
+                summary.value.add(tag='testing/minimum_Q', simple_value=min_Q)
+                summary.value.add(tag='testing/average_maximum_Q', simple_value=avg_max_Q)
+                summary.value.add(tag='testing/maximum_Q', simple_value=max_Q)
+
+                summary_writer.add_summary(summary, epoch_i)
+                summary_writer.flush()
 
 
 if __name__ == '__main__':

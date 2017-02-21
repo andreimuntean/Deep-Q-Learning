@@ -6,15 +6,32 @@ Heavily influenced by DeepMind's seminal paper 'Playing Atari with Deep Reinforc
 """
 
 import dqn
-import math
 import numpy as np
 import random
 import tensorflow as tf
 
 
+class TestOnlyAgent():
+    def __init__(self, env):
+        """An agent that maximizes its score using deep Q-learning.
+
+        Args:
+            env: An AtariWrapper object (see 'environment.py') that wraps over an OpenAI Gym
+                environment.
+        """
+
+        self.env = env
+        self.dqn = dqn.DeepQNetwork(env.state_shape, env.num_actions)
+
+    def get_action(self, state):
+        """Estimates the optimal action for the specified state."""
+
+        action_i = self.dqn.get_optimal_action(state)
+        return self.env.action_space[action_i]
+
+
 class Agent():
     def __init__(self,
-                 sess,
                  env,
                  start_epsilon,
                  end_epsilon,
@@ -23,13 +40,11 @@ class Agent():
                  target_network_reset_interval,
                  batch_size,
                  learning_rate,
-                 dropout_prob,
                  max_gradient_norm,
                  discount):
         """An agent that learns to play Atari games using deep Q-learning.
 
         Args:
-            sess: The associated TensorFlow session.
             env: An AtariWrapper object (see 'environment.py') that wraps over an OpenAI Gym Atari
                 environment.
             start_epsilon: Initial value for epsilon (exploration chance) used when training.
@@ -42,20 +57,13 @@ class Agent():
                 Q-network values. Using a delayed target Q-network improves training stability.
             batch_size: Number of experiences sampled and trained on at once.
             learning_rate: The speed with which the network learns from new examples.
-            dropout_prob: Likelihood of neurons from fully connected layers becoming inactive.
             max_gradient_norm: Maximum value allowed for the L2-norms of gradients. Gradients with
                 norms that would otherwise surpass this value are scaled down.
             discount: Discount factor for future rewards.
         """
 
-        self.sess = sess
         self.env = env
-        self.dqn = dqn.DeepQNetwork(sess,
-                                    len(env.action_space),
-                                    env.state_space,
-                                    learning_rate,
-                                    dropout_prob,
-                                    max_gradient_norm)
+        self.dqn = dqn.DeepQNetwork(env.state_shape, env.num_actions)
         self.start_epsilon = start_epsilon
         self.end_epsilon = end_epsilon
         self.anneal_duration = anneal_duration
@@ -69,23 +77,44 @@ class Agent():
 
         # Create target Q-network.
         dqn_params = tf.trainable_variables()
-        self.target_dqn = dqn.DeepQNetwork(sess,
-                                           len(env.action_space),
-                                           env.state_space,
-                                           learning_rate,
-                                           dropout_prob,
-                                           max_gradient_norm)
+        self.target_dqn = dqn.DeepQNetwork(env.state_space, env.num_actions)
         target_dqn_params = tf.trainable_variables()[len(dqn_params):]
 
         # Reset target Q-network values to the actual Q-network values.
         self.reset_target_dqn = [old.assign(new) for old, new in zip(target_dqn_params, dqn_params)]
 
+        # Define the optimization scheme for the deep Q-network.
+        self.reward = tf.placeholder(tf.float32, [None], name='Observed_Reward')
+        self.ongoing = tf.placeholder(tf.bool, [None], name='State_Is_Nonterminal')
+
+        # Determine the true action values using double Q-learning (Hasselt et al., 2015): estimate
+        # optimal actions using the Q-network, but estimate their values using the (delayed) target
+        # Q-network. This reduces the likelihood that Q is overestimated.
+        one_hot_action = tf.one_hot(self.dqn.optimal_action, self.env.num_actions)
+        next_optimal_action_value = tf.stop_gradient(
+            tf.reduce_sum(self.target_dqn.Q * one_hot_action, 1))
+        observed_action_value = (
+            self.reward + tf.cast(self.ongoing, tf.float32) * discount * next_optimal_action_value)
+
+        # Compute the loss function and regularize it by clipping the norm of its gradients.
+        loss = tf.nn.l2_loss(self.dqn.estimated_action_value - observed_action_value)
+        gradients = tf.gradients(loss, dqn_params)
+        clipped_gradients, _ = tf.clip_by_global_norm(gradients, max_gradient_norm)
+
+        # Perform gradient descent.
+        grads_and_vars = list(zip(clipped_gradients, dqn_params))
+        self.global_step = tf.Variable(tf.constant(0, tf.int64), False, name='Global_Step')
+        self.train_step = tf.train.AdamOptimizer(learning_rate).apply_gradients(
+            grads_and_vars, self.global_step)
+
     def train(self):
         """Performs a single learning step."""
 
+        sess = tf.get_default_session()
+
         if self.time_step == 0:
             # Initialize target Q-network.
-            self.sess.run(self.reset_target_dqn)
+            sess.run(self.reset_target_dqn)
 
         self.epsilon = self._get_epsilon()
         self.time_step += 1
@@ -104,30 +133,22 @@ class Agent():
             states, actions, rewards, next_states, ongoing = self.env.sample_experiences(self.batch_size)
             actions_i = np.stack([self.env.action_space.index(a) for a in actions], axis=0)
 
-            # Determine the true action values using double Q-learning (Hasselt et al., 2015):
-            # estimate optimal actions using the Q-network, but estimate their values using the
-            # (delayed) target Q-network. This reduces the likelihood that Q is overestimated.
-            Q_ = rewards + ongoing * self.discount * self.target_dqn.eval_Q(
-                next_states, self.dqn.eval_optimal_action(next_states))
-
             # Estimate action values, measure errors and update weights.
-            self.dqn.train(states, actions_i, Q_)
+            sess.run(self.train_step, {self.dqn.x: states,
+                                       self.dqn.action: actions_i,
+                                       self.reward: rewards,
+                                       self.target_dqn.x: next_states,
+                                       self.ongoing: ongoing})
 
         # Occasionally reset target Q-network values to actual Q-network values.
         if self.time_step % self.target_network_reset_interval == 0:
-            self.sess.run(self.reset_target_dqn)
+            sess.run(self.reset_target_dqn)
 
     def get_action(self, state):
         """Estimates the optimal action for the specified state."""
 
-        # Turn the state into a batch of size 1.
-        state = np.expand_dims(state, axis=0)
-
-        # Estimate the optimal action index.
-        action_i = self.dqn.eval_optimal_action(state)
-        action = self.env.action_space[action_i]
-
-        return action
+        action_i = self.dqn.get_optimal_action(state)
+        return self.env.action_space[action_i]
 
     def _get_epsilon(self):
         """Gets the epsilon value (exploration chance) for the current time step."""
