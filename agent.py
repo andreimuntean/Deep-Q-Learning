@@ -90,7 +90,8 @@ class Agent():
         # Determine the true action values using double Q-learning (Hasselt et al., 2015): estimate
         # optimal actions using the Q-network, but estimate their values using the (delayed) target
         # Q-network. This reduces the likelihood that Q is overestimated.
-        one_hot_action = tf.one_hot(self.dqn.optimal_action, self.env.num_actions)
+        self.next_optimal_action = tf.placeholder(tf.uint8, [None], name='Next_Optimal_Action')
+        one_hot_action = tf.one_hot(self.next_optimal_action, self.env.num_actions)
         next_optimal_action_value = tf.stop_gradient(
             tf.reduce_sum(self.target_dqn.Q * one_hot_action, 1))
         observed_action_value = (
@@ -132,12 +133,14 @@ class Agent():
             # Sample experiences.
             states, actions, rewards, next_states, ongoing = self.env.sample_experiences(self.batch_size)
             actions_i = np.stack([self.env.action_space.index(a) for a in actions], axis=0)
+            next_optimal_actions = self.dqn.get_optimal_action(next_states)
 
             # Estimate action values, measure errors and update weights.
             sess.run(self.train_step, {self.dqn.x: states,
                                        self.dqn.action: actions_i,
                                        self.reward: rewards,
                                        self.target_dqn.x: next_states,
+                                       self.next_optimal_action: next_optimal_actions,
                                        self.ongoing: ongoing})
 
         # Occasionally reset target Q-network values to actual Q-network values.
