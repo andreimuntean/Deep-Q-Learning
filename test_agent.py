@@ -14,13 +14,9 @@ LOGGER.setLevel(logging.INFO)
 
 PARSER = argparse.ArgumentParser()
 
-PARSER.add_argument('-env_name',
-                    metavar='ENVIRONMENT',
-                    help='name of the OpenAI Gym Atari environment that will be played')
+PARSER.add_argument('env_name', help='name of the OpenAI Gym Atari environment that will be played')
 
-PARSER.add_argument('-load_path',
-                    metavar='PATH',
-                    help='loads the trained model from the specified path')
+PARSER.add_argument('load_path', help='loads the trained model from the specified path')
 
 PARSER.add_argument('--save_path',
                     metavar='PATH',
@@ -58,7 +54,7 @@ PARSER.add_argument('--gpu_memory_alloc',
                     metavar='PERCENTAGE',
                     help='determines how much GPU memory to allocate for the neural network',
                     type=float,
-                    default=0.25)
+                    default=0.1)
 
 
 def main(args):
