@@ -140,7 +140,7 @@ class AtariWrapper:
 
         # Remember this experience.
         self.actions[self.num_exp] = action
-        self.rewards[self.num_exp] = reward
+        self.rewards[self.num_exp] = -1 if reward < 0 else 1 if reward > 0 else 0
         self.ongoing[self.num_exp] = ongoing
         self.observations[self.num_exp + self.state_length] = observation
         self.num_exp += 1
