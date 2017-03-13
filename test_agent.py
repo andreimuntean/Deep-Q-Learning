@@ -20,13 +20,14 @@ PARSER.add_argument('load_path', help='loads the trained model from the specifie
 
 PARSER.add_argument('--save_path',
                     metavar='PATH',
-                    default=None,
-                    help='path where to save experiments and videos')
+                    help='path where to save experiments and videos',
+                    default=None)
 
 PARSER.add_argument('--render',
                     help='determines whether to display the game screen of the agent',
-                    type=bool,
-                    default=True)
+                    dest='render',
+                    action='store_true',
+                    default=False)
 
 PARSER.add_argument('--num_episodes',
                     help='number of episodes to play',

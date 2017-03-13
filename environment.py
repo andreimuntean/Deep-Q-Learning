@@ -104,7 +104,7 @@ class AtariWrapper:
         self.episode_start_time = time.time()
         self.episode_run_time = 0
         self.fps = 0
-        self.lives = self.gym_env.ale.lives()
+        self.lives = None
 
     def step(self, action):
         """Performs the specified action.
@@ -135,7 +135,7 @@ class AtariWrapper:
             self.done = True
 
         # Treat loss of life as end of episode.
-        ongoing = not self.done and self.lives == info['ale.lives']
+        ongoing = not self.done and self.lives is not None and self.lives == info['ale.lives']
         self.lives = info['ale.lives']
 
         # Remember this experience.
