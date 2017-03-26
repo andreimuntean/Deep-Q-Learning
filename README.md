@@ -4,7 +4,10 @@ Deep reinforcement learning using a deep Q-network with a dueling architecture w
 This AI does not rely on hand-engineered rules or features. Instead, it masters the environment by looking at raw pixels and learning from experience, just as humans do.
 
 ## Dependencies
+* NumPy
 * OpenAI Gym 0.8
+* Pillow
+* SciPy
 * TensorFlow 1.0
 
 ## Learning Environment
