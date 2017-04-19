@@ -39,6 +39,12 @@ PARSER.add_argument('--log_dir',
                     help='path to a directory where to save & restore the model and log events',
                     default='models/tmp')
 
+PARSER.add_argument('--render',
+                    help='determines whether to display the game screen of the agent',
+                    dest='render',
+                    action='store_true',
+                    default=False)
+
 PARSER.add_argument('--num_epochs',
                     metavar='EPOCHS',
                     help='number of epochs to train for',
@@ -195,7 +201,8 @@ def main(args):
             saver.restore(sess, args.load_path)
             LOGGER.info('Restored model from "%s".', args.load_path)
 
-        # Accumulate experiences.
+        LOGGER.info('Accumulating %d experiences before training...', args.wait_before_training)
+
         for _ in range(args.wait_before_training):
             env.step(env.sample_action())
 
@@ -205,6 +212,9 @@ def main(args):
         for epoch_i in range(args.num_epochs):
             for _ in range(args.epoch_length):
                 player.train()
+
+                if args.render:
+                    env.render()
 
                 if env.done:
                     LOGGER.info('Finished episode. Total reward: %d. Length: %d.',
