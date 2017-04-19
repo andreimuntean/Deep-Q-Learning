@@ -1,9 +1,10 @@
 """Tests a trained agent's ability to play Atari games from OpenAI Gym."""
 
-import argparse
 import agent
+import argparse
 import environment
 import logging
+import random
 import tensorflow as tf
 
 from gym import wrappers
@@ -45,6 +46,12 @@ PARSER.add_argument('--max_episode_length',
                     type=int,
                     default=50000)
 
+PARSER.add_argument('--epsilon',
+                    metavar='EPSILON',
+                    help='likelihood that the agent selects a random action',
+                    type=float,
+                    default=0.0)
+
 PARSER.add_argument('--observations_per_state',
                     metavar='FRAMES',
                     help='number of consecutive frames within a state',
@@ -78,8 +85,12 @@ def main(args):
             episode_reward = 0
 
             for t in range(args.max_episode_length):
-                state = env.get_state()
-                action = player.get_action(state)
+                # Occasionally try a random action.
+                if random.random() < args.epsilon:
+                    action = env.sample_action()
+                else:
+                    action = player.get_action(env.get_state())
+
                 reward = env.step(action)
                 episode_reward += reward
 
