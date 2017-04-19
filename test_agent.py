@@ -7,8 +7,6 @@ import logging
 import random
 import tensorflow as tf
 
-from gym import wrappers
-
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
@@ -68,11 +66,12 @@ PARSER.add_argument('--gpu_memory_alloc',
 def main(args):
     """Loads a trained agent that plays Atari games from OpenAI Gym."""
 
-    env = environment.AtariWrapper(
-        args.env_name, args.max_episode_length, 100, args.observations_per_state, args.action_space)
-
-    if args.save_path:
-        env.gym_env = wrappers.Monitor(env.gym_env, args.save_path)
+    env = environment.AtariWrapper(args.env_name,
+                                   args.max_episode_length,
+                                   100,
+                                   args.observations_per_state,
+                                   args.action_space,
+                                   args.save_path)
 
     with tf.Session() as sess:
         player = agent.TestOnlyAgent(env)

@@ -10,6 +10,7 @@ import numpy as np
 import random
 import time
 
+from gym import wrappers
 from scipy import misc
 
 # Specifies restricted action spaces. For games not in this dictionary, all actions are enabled.
@@ -43,7 +44,8 @@ class AtariWrapper:
                  max_episode_length,
                  replay_memory_capacity,
                  observations_per_state,
-                 action_space=None):
+                 action_space=None,
+                 save_path=None):
         """Creates the wrapper.
 
         Args:
@@ -58,9 +60,14 @@ class AtariWrapper:
                 the ball can't be inferred from a single image.
             action_space: A list of possible actions. If 'action_space' is 'None' and no default
                 configuration exists for this environment, all actions will be allowed.
+            save_path: Path where to save experiments and videos.
         """
 
         self.gym_env = gym.make(env_name)
+
+        if save_path:
+            self.gym_env = wrappers.Monitor(self.gym_env, save_path)
+
         self.max_episode_length = max_episode_length
         self.replay_memory_capacity = replay_memory_capacity
         self.state_length = observations_per_state
